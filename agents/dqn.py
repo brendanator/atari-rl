@@ -1,12 +1,6 @@
 import tensorflow as tf
 from . import util
 
-tf.app.flags.DEFINE_integer('input_height', 84, 'Rescale input to this height')
-tf.app.flags.DEFINE_integer('input_width', 84, 'Rescale input to this width')
-tf.app.flags.DEFINE_integer('input_frames', 4, 'Number of frames to input')
-tf.app.flags.DEFINE_float('discount_factor', 0.99,
-                          'Discount factor for future rewards')
-
 
 def deep_q_network(config, num_actions):
   with tf.variable_scope('input_frames'):
@@ -72,11 +66,11 @@ def loss(target_max_values, action_values, config):
   with tf.variable_scope('loss'):
     reward_input = tf.placeholder(tf.float32, [None], name='reward')
     action_input = tf.placeholder(tf.int32, [None], name='action')
-    done_input = tf.placeholder(tf.bool, [None], name='done')
+    done_input = tf.placeholder(tf.float32, [None], name='done')
 
-    target_action_value = tf.select(
-        done_input, reward_input,
-        reward_input + config.discount_factor * target_max_values)
+    target_action_value = (
+        reward_input +
+        (1.0 - done_input) * config.discount_factor * target_max_values)
     predicted_action_value = tf.reduce_sum(
         action_values * tf.one_hot(action_input, config.num_actions), axis=1)
 
