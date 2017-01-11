@@ -22,6 +22,7 @@ flags.DEFINE_integer('random_reset_actions', 30,
                      'Number of random actions to perform at start of episode')
 
 # Agent
+flags.DEFINE_bool('double_q', False, 'Whether to use double Q-Learning')
 flags.DEFINE_integer('replay_capacity', 100000, 'Size of replay memory')
 flags.DEFINE_integer(
     'replay_start_size', 50000,
@@ -107,7 +108,8 @@ def train(config):
         if np.random.rand() < epsilon(step, config):
           action = atari.sample_action()
         else:
-          action = session.run(max_action, {input_frames: [observation]})
+          action = session.run(policy_network.max_action,
+                               {policy_network.input_frames: [observation]})
 
         # Take action
         next_observation, reward, done = atari.step(action)
@@ -121,8 +123,8 @@ def train(config):
                                   replay_memory.sample_batch(config.batch_size)
         feed_dict = {
             policy_network.input_frames: observations,
-            reward_input: rewards,
             action_input: actions,
+            reward_input: rewards,
             done_input: dones,
             target_network.input_frames: next_observations,
         }

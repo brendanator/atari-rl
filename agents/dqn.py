@@ -3,12 +3,17 @@ from . import util
 
 
 class QNetwork:
-  def __init__(self, scope_name, reuse, config):
+  def __init__(self, scope_name, reuse, config, input_frames=None):
     with tf.variable_scope(scope_name, reuse=reuse):
       with tf.variable_scope('input_frames'):
-        self.input_frames = tf.placeholder(tf.float32, [
-            None, config.input_frames, config.input_height, config.input_width
-        ], 'input_frames')
+        if input_frames is None:
+          self.input_frames = tf.placeholder(tf.float32, [
+              None, config.input_frames, config.input_height,
+              config.input_width
+          ], 'input_frames')
+        else:
+          # Reuse another QNetwork's input_frames
+          self.input_frames = input_frames
         nhwc_input_frames = tf.transpose(self.input_frames, [0, 2, 3, 1])
 
       with tf.variable_scope('conv1'):
@@ -30,9 +35,10 @@ class QNetwork:
             config.num_actions,
             activation_fn=None,
             name='action_values')
+
         max_values, max_actions = tf.nn.top_k(self.action_values, k=1)
-        self.max_values = tf.squeeze(max_values, axis=1, name='max_values')
-        self.max_action = tf.squeeze(max_actions, name='max_action')
+        self.max_value = tf.squeeze(max_values, axis=1, name='max_value')
+        self.max_action = tf.squeeze(max_actions, axis=1, name='max_action')
 
   def conv_layer(self, inputs, height, width, stride, filters):
     kernel_shape = [height, width, inputs.get_shape().as_list()[-1], filters]
@@ -79,15 +85,30 @@ class QNetwork:
 
 
 class PolicyNetwork(QNetwork):
-  def __init__(self, config):
+  def __init__(self, config, reuse=None, input_frames=None):
     self.scope = 'policy'
-    super(PolicyNetwork, self).__init__(self.scope, False, config)
+    super(PolicyNetwork, self).__init__(self.scope, reuse, config,
+                                        input_frames)
 
 
 class TargetNetwork(QNetwork):
   def __init__(self, config):
     self.scope = 'target'
     super(TargetNetwork, self).__init__(self.scope, False, config)
+
+    if config.double_q:
+      self.policy_network = PolicyNetwork(
+          config, reuse=True, input_frames=self.input_frames)
+
+      with tf.variable_scope('double_q'):
+        self.max_action = tf.identity(
+            self.policy_network.max_action, name='max_action')
+
+        self.max_value = tf.reduce_sum(
+            tf.one_hot(self.max_action, config.num_actions) *
+            self.action_values,
+            axis=1,
+            name='max_value')
 
 
 def loss(policy_network, target_network, config):
@@ -96,8 +117,9 @@ def loss(policy_network, target_network, config):
     reward_input = tf.placeholder(tf.float32, [None], name='reward')
     done_input = tf.placeholder(tf.float32, [None], name='done')
 
-    target_action_value = (reward_input + (1.0 - done_input) *
-                           config.discount_factor * target_network.max_values)
+    target_action_value = (
+        reward_input +
+        (1.0 - done_input) * config.discount_factor * target_network.max_value)
 
     predicted_action_value = tf.reduce_sum(
         policy_network.action_values *
