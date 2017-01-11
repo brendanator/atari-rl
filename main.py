@@ -33,7 +33,7 @@ flags.DEFINE_integer(
 # Training
 flags.DEFINE_integer('batch_size', 32, 'Batch size')
 flags.DEFINE_integer('num_episodes', 100, 'Number of episodes to train on')
-flags.DEFINE_string('train_dir', '/tmp/train_dqn',
+flags.DEFINE_string('train_dir', '/tmp/train_atari',
                     'Directory to write checkpoints')
 flags.DEFINE_integer('summary_step_frequency', 100,
                      'How many training steps between writing summaries')
@@ -63,25 +63,20 @@ def train(config):
   prepopulate_replay_memory(replay_memory, atari, config.replay_start_size)
 
   # Create action-value network
-  with tf.variable_scope('action_value') as action_value_scope:
-    input_frames, action_values, _, max_action = \
-                                dqn.deep_q_network(config, atari.num_actions)
+  policy_network = dqn.PolicyNetwork(config)
 
   # Create target action-value network
-  with tf.variable_scope('target_action_value') as target_action_value_scope:
-    target_input_frames, _, target_max_values, _ = dqn.deep_q_network(
-        config, atari.num_actions)
+  target_network = dqn.TargetNetwork(config)
 
   # Calculate Q loss
-  reward_input, action_input, done_input, loss = dqn.loss(
-      target_max_values, action_values, config)
+  action_input, reward_input, done_input, loss = dqn.loss(
+      policy_network, target_network, config)
 
   # Create training operation
   train_op = dqn.train(loss, global_step)
 
-  # Create operation to copy action-values variables to target network
-  reset_target_network = dqn.copy_q_network(
-      action_value_scope, target_action_value_scope, 'reset_target_network')
+  # Create operation to copy variables from policy network to target network
+  reset_target_network = policy_network.copy_to_network(target_network)
 
   # Summary operation
   summary_op = tf.summary.merge_all()
@@ -125,11 +120,11 @@ def train(config):
         observations, actions, rewards, dones, next_observations = \
                                   replay_memory.sample_batch(config.batch_size)
         feed_dict = {
-            input_frames: observations,
-            target_input_frames: next_observations,
+            policy_network.input_frames: observations,
             reward_input: rewards,
             action_input: actions,
-            done_input: dones
+            done_input: dones,
+            target_network.input_frames: next_observations,
         }
         if step % config.summary_step_frequency == 0:
           # Don't write summaries every step
