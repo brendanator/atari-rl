@@ -12,6 +12,7 @@ class Atari:
     self.input_width = config.input_width
     self.num_frames_per_action = config.num_frames_per_action
     self.render = config.render
+    self.reward_clipping = config.reward_clipping
 
     config.num_actions = self.num_actions
 
@@ -25,7 +26,7 @@ class Atari:
   def reset(self, render=None):
     """Reset the game and play some random actions"""
 
-    if render == None: render = self.render
+    if render is None: render = self.render
 
     self._previous_frame = self.env.reset()
     reward = 0
@@ -45,7 +46,7 @@ class Atari:
   def step(self, action, render=None):
     """Repeat action for k steps and accumulate results"""
 
-    if render == None: render = self.render
+    if render is None: render = self.render
 
     observation = []
     reward = 0
@@ -61,6 +62,12 @@ class Atari:
       done = done or done_
 
     return np.array(observation), reward, done
+
+  def clip_reward(self, reward):
+    if self.reward_clipping > 0:
+      return max(-self.reward_clipping, min(reward, self.reward_clipping))
+    else:
+      return reward
 
   def _process(self, frame):
     """Merge 2 frames, resize, and extract luminance"""
