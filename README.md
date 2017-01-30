@@ -15,16 +15,17 @@ Learning to play Atari in TensorFlow using Deep Reinforcement Learning
 
 ## Papers Implemented
 
-- :white_check_mark: [Human Level Control through Deep Reinforcement Learning](https://www.nature.com/nature/journal/v518/n7540/pdf/nature14236.pdf)
+- :white_check_mark: [Human Level Control through Deep Reinforcement Learning](http://www.nature.com/nature/journal/v518/n7540/pdf/nature14236.pdf)
     - `python3 main.py`
 - :white_check_mark: [Deep Reinforcement Learning with Double Q-learning](https://arxiv.org/pdf/1509.06461.pdf)
     - `python3 main.py --double_q`
+- :white_check_mark: [Dueling Network Architectures for Deep Reinforcement Learning](https://arxiv.org/pdf/1511.06581.pdf)
+    - `python3 main.py --dueling`
 - :white_check_mark: [Learning to Play in a Day: Faster Deep Reinforcement Learning by Optimality Tightening](https://arxiv.org/pdf/1611.01606.pdf)
     - `python3 main.py --optimality_tightening`
 - :x: [Increasing the Action Gap: New Operators for Reinforcement Learning](https://arxiv.org/pdf/1512.04860.pdf)
 - :x: [Prioritized Experience Replay](https://arxiv.org/pdf/1511.05952.pdf)
 - :x: [Deep Exploration via Bootstrapped DQN](https://arxiv.org/pdf/1602.04621.pdf)
-- :x: [Dueling Network Architectures for Deep Reinforcement Learning](https://arxiv.org/pdf/1511.06581.pdf)
 - :x: [Deep Recurrent Q-Learning for Partially Observable MDPs](https://arxiv.org/pdf/1507.06527.pdf)
 - :x: [Learning functions across many orders of magnitudes](https://arxiv.org/pdf/1602.07714.pdf)
 - :x: [Safe and efficient Off-Policy Reinforcement Learning](https://arxiv.org/pdf/1606.02647.pdf)

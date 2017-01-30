@@ -32,6 +32,7 @@ flags.DEFINE_integer(
 flags.DEFINE_integer(
     'target_network_update_frequency', 10000,
     'The number of parameter updates before the target network is updated')
+flags.DEFINE_bool('dueling', False, 'Enable dueling network architecture')
 flags.DEFINE_bool('optimality_tightening', False,
                   'Enable optimality tightening')
 flags.DEFINE_integer(
@@ -90,6 +91,8 @@ def train(config):
     violation_penalty, loss_rescaling = constraint_network.violation_penalty(
         policy_network)
     loss = (loss + violation_penalty) / loss_rescaling
+  else:
+    constraint_network = None
 
   loss = tf.reduce_mean(loss)
 

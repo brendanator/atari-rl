@@ -1,4 +1,6 @@
+import math
 import tensorflow as tf
+
 from . import util
 
 
@@ -37,17 +39,10 @@ class QNetwork:
 
       with tf.variable_scope('conv3'):
         conv3 = self.conv_layer(conv2, 3, 3, 1, 64)
-
-      with tf.variable_scope('fully_connected'):
-        flattened = tf.reshape(conv3, [-1, 7 * 7 * 64])
-        hidden = self.fully_connected(flattened, 512, activation_fn=tf.nn.relu)
+        conv3 = tf.reshape(conv3, [-1, 7 * 7 * 64])
 
       with tf.variable_scope('output'):
-        self.action_values = self.fully_connected(
-            hidden,
-            config.num_actions,
-            activation_fn=None,
-            name='action_values')
+        self.action_values = self.action_values_layer(conv3, config)
 
         self.taken_action_value = tf.reduce_sum(
             self.action_values *
@@ -57,6 +52,37 @@ class QNetwork:
         max_values, max_actions = tf.nn.top_k(self.action_values, k=1)
         self.max_value = tf.squeeze(max_values, axis=1, name='max_value')
         self.max_action = tf.squeeze(max_actions, axis=1, name='max_action')
+
+  def action_values_layer(self, inputs, config):
+    if config.dueling:
+      # Rescale gradients entering the last convolution layer
+      with inputs.graph.gradient_override_map({'Identity': 'grad_over_sqrt2'}):
+        inputs = tf.identity(inputs)
+
+      hidden_value = self.fully_connected(
+          inputs, 512, activation_fn=tf.nn.relu, name='hidden_value')
+      value = self.fully_connected(
+          hidden_value, 1, activation_fn=tf.nn.relu, name='value')
+
+      hidden_actions = self.fully_connected(
+          inputs, 512, activation_fn=tf.nn.relu, name='hidden_actions')
+      actions = self.fully_connected(
+          hidden_actions,
+          config.num_actions,
+          activation_fn=tf.nn.relu,
+          name='actions')
+
+      return tf.identity(
+          value + actions - tf.reduce_mean(
+              actions, axis=1, keep_dims=True),
+          name='action_values')
+
+    else:
+      hidden = self.fully_connected(
+          inputs, 512, activation_fn=tf.nn.relu, name='hidden')
+
+      return self.fully_connected(
+          hidden, config.num_actions, activation_fn=None, name='action_values')
 
   def conv_layer(self, inputs, height, width, stride, filters):
     kernel_shape = [height, width, inputs.get_shape().as_list()[-1], filters]
@@ -73,18 +99,20 @@ class QNetwork:
     return relu
 
   def fully_connected(self, inputs, size, activation_fn, name=None):
-    weights_shape = [inputs.get_shape().as_list()[-1], size]
-    weights = util.variable_with_weight_decay('weights', weights_shape)
-    biases = util.variable_on_cpu('bias', [size], tf.constant_initializer(0.1))
+    with tf.variable_scope(name):
+      weights_shape = [inputs.get_shape().as_list()[-1], size]
+      weights = util.variable_with_weight_decay('weights', weights_shape)
+      biases = util.variable_on_cpu('bias', [size],
+                                    tf.constant_initializer(0.1))
 
-    logits = tf.nn.xw_plus_b(inputs, weights, biases)
-    if activation_fn:
-      output = activation_fn(logits, name=name)
-    else:
-      output = tf.identity(logits, name=name)
+      logits = tf.nn.xw_plus_b(inputs, weights, biases)
+      if activation_fn:
+        output = activation_fn(logits, name=name)
+      else:
+        output = tf.identity(logits, name=name)
 
-    util.activation_summary(output)
-    return output
+      util.activation_summary(output)
+      return output
 
   def copy_to_network(self, to_network):
     """Copy the tensor variables with the same names between the two scopes"""
@@ -144,3 +172,8 @@ class TargetNetwork(QNetwork):
         policy_network.taken_action_value)
 
     return square_error
+
+
+@tf.RegisterGradient('grad_over_sqrt2')
+def grad_over_sqrt2(op, grad):
+  return grad / math.sqrt(2.0)

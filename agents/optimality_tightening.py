@@ -40,8 +40,7 @@ class ConstraintNetwork:
       upper_bounds.append(upper_bound)
 
     upper_bounds = tf.pack(upper_bounds, axis=1)
-    upper_bound = tf.reduce_min(
-        upper_bounds, reduction_indices=1, name='upper_bound')
+    upper_bound = tf.reduce_min(upper_bounds, axis=1, name='upper_bound')
 
     return upper_bound
 
@@ -77,8 +76,7 @@ class ConstraintNetwork:
 
     self.total_reward = tf.placeholder(tf.float32, [None], 'total_reward')
     lower_bounds = tf.pack(lower_bounds + [self.total_reward], axis=1)
-    lower_bound = tf.reduce_max(
-        lower_bounds, reduction_indices=1, name='lower_bound')
+    lower_bound = tf.reduce_max(lower_bounds, axis=1, name='lower_bound')
 
     return lower_bound
 
