@@ -124,7 +124,6 @@ def train(config):
       # Start episode with random action
       start_time = time.time()
       observation, episode_reward = atari.reset()
-      replay_memory.start_new_episode(observation)
       done = False
       episode_steps = 0
 
@@ -142,8 +141,7 @@ def train(config):
 
         # Take action
         next_observation, reward, done = atari.step(action)
-        replay_memory.store(observation, action, reward, done,
-                            next_observation)
+        replay_memory.store(observation, action, reward, done)
         observation = next_observation
         episode_reward += reward
 
@@ -202,11 +200,10 @@ def prepopulate_replay_memory(replay_memory, atari, start_size):
   for _ in range(start_size):
     if done:
       observation, _ = atari.reset(render=False)
-      replay_memory.start_new_episode(observation)
 
     action = atari.sample_action()
     next_observation, reward, done = atari.step(action, render=False)
-    replay_memory.store(observation, action, reward, done, next_observation)
+    replay_memory.store(observation, action, reward, done)
     observation = next_observation
 
 
@@ -225,7 +222,7 @@ def build_feed_dict(batch, policy_network, target_network, constraint_network):
       policy_network.input_frames: batch.observations,
       policy_network.action_input: batch.actions,
       target_network.reward_input: batch.rewards,
-      target_network.done_input: batch.dones,
+      target_network.alive_input: batch.alives,
       target_network.input_frames: batch.next_observations,
   }
 
@@ -234,12 +231,13 @@ def build_feed_dict(batch, policy_network, target_network, constraint_network):
         constraint_network.past_input_frames: batch.past_observations,
         constraint_network.past_actions: batch.past_actions,
         constraint_network.past_rewards: batch.past_rewards,
-        constraint_network.past_discounts: batch.past_discounts,
+        constraint_network.past_alives: batch.past_alives,
+        constraint_network.rewards: batch.rewards,
+        constraint_network.alives: batch.alives,
         constraint_network.future_input_frames: batch.future_observations,
-        constraint_network.future_dones: batch.future_dones,
         constraint_network.future_rewards: batch.future_rewards,
-        constraint_network.future_discounts: batch.future_discounts,
-        constraint_network.total_reward: batch.total_rewards
+        constraint_network.future_alives: batch.future_alives,
+        constraint_network.total_rewards: batch.total_rewards
     }
     feed_dict.update(constraint_feed_dict)
 

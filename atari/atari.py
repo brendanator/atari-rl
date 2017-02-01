@@ -41,7 +41,7 @@ class Atari:
       reward += reward_
       if done: self.reset(render)
 
-    return np.array(observation[-4:]), reward
+    return np.array(observation[-4:]), self.clip_reward(reward)
 
   def step(self, action, render=None):
     """Repeat action for k steps and accumulate results"""
@@ -61,7 +61,7 @@ class Atari:
       reward += reward_
       done = done or done_
 
-    return np.array(observation), reward, done
+    return np.array(observation), self.clip_reward(reward), done
 
   def clip_reward(self, reward):
     if self.reward_clipping > 0:

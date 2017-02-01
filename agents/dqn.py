@@ -146,11 +146,10 @@ class TargetNetwork(QNetwork):
       self.setup_double_q_max_value(config)
 
     self.reward_input = tf.placeholder(tf.float32, [None], name='reward')
-    self.done_input = tf.placeholder(tf.float32, [None], name='done')
+    self.alive_input = tf.placeholder(tf.float32, [None], name='alive')
 
-    self.target_action_value = (
-        self.reward_input +
-        (1.0 - self.done_input) * config.discount_rate * self.max_value)
+    self.target_action_value = self.reward_input + (
+        self.alive_input * config.discount_rate * self.max_value)
 
   def setup_double_q_max_value(self, config):
     self.policy_network = PolicyNetwork(
