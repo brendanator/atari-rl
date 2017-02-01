@@ -29,6 +29,10 @@ flags.DEFINE_integer('replay_capacity', 100000, 'Size of replay memory')
 flags.DEFINE_integer(
     'replay_start_size', 50000,
     'Pre-populate the replay memory with this number of random actions')
+flags.DEFINE_bool('replay_prioritized', False,
+                  'Enable prioritized replay memory')
+flags.DEFINE_float('alpha', 0.6, 'Prioritized experience replay exponent')
+flags.DEFINE_float('beta', 0.4, 'Initial importance sampling exponent')
 flags.DEFINE_integer(
     'target_network_update_frequency', 10000,
     'The number of parameter updates before the target network is updated')
@@ -84,17 +88,18 @@ def train(config):
   target_network = dqn.TargetNetwork(config)
 
   # Calculate loss
-  loss = target_network.square_error(policy_network)
+  td_errors = target_network.square_error(policy_network)
 
   if config.optimality_tightening:
     constraint_network = ConstraintNetwork(config)
-    violation_penalty, loss_rescaling = constraint_network.violation_penalty(
+    violation_penalty, error_rescaling = constraint_network.violation_penalty(
         policy_network)
-    loss = (loss + violation_penalty) / loss_rescaling
+    td_errors = (td_errors + violation_penalty) / error_rescaling
   else:
     constraint_network = None
 
-  loss = tf.reduce_mean(loss)
+  error_weights = tf.placeholder(tf.float32, [None], 'error_weights')
+  loss = tf.reduce_mean(error_weights * td_errors)
 
   if config.loss_clipping > 0:
     loss = tf.maximum(-config.loss_clipping,
@@ -148,13 +153,15 @@ def train(config):
         # Train on random batch
         batch = replay_memory.sample_batch(config.batch_size)
         feed_dict = build_feed_dict(batch, policy_network, target_network,
-                                    constraint_network)
+                                    constraint_network, error_weights)
         if step % config.summary_step_frequency == 0:
           # Don't write summaries every step
-          _, summary = session.run([train_op, summary_op], feed_dict)
+          errors, _, summary = session.run([td_errors, train_op, summary_op],
+                                           feed_dict)
           summary_writer.add_summary(summary, step)
         else:
-          session.run(train_op, feed_dict)
+          errors, _ = session.run([td_errors, train_op], feed_dict)
+        replay_memory.update_td_errors(batch.indices, errors)
 
         # Reset target_action_value network
         if step % config.target_network_update_frequency == 0:
@@ -195,9 +202,10 @@ def optimize(loss, global_step, config):
 def prepopulate_replay_memory(replay_memory, atari, start_size):
   """Play game with random actions to populate the replay memory"""
 
+  count = 0
   done = True
 
-  for _ in range(start_size):
+  while count <= start_size or not done:
     if done:
       observation, _ = atari.reset(render=False)
 
@@ -205,6 +213,7 @@ def prepopulate_replay_memory(replay_memory, atari, start_size):
     next_observation, reward, done = atari.step(action, render=False)
     replay_memory.store(observation, action, reward, done)
     observation = next_observation
+    count += 1
 
 
 def epsilon(step, config):
@@ -217,13 +226,15 @@ def epsilon(step, config):
   return max(annealed_exploration, config.final_exploration)
 
 
-def build_feed_dict(batch, policy_network, target_network, constraint_network):
+def build_feed_dict(batch, policy_network, target_network, constraint_network,
+                    error_weights):
   feed_dict = {
       policy_network.input_frames: batch.observations,
       policy_network.action_input: batch.actions,
       target_network.reward_input: batch.rewards,
       target_network.alive_input: batch.alives,
       target_network.input_frames: batch.next_observations,
+      error_weights: batch.error_weights
   }
 
   if constraint_network:

@@ -11,6 +11,7 @@ class ReplayMemory:
       self.constraint_steps = config.optimality_tightening_steps
     else:
       self.constraint_steps = 0
+    self.prioritized = config.replay_prioritized
 
     # Track position and count in memory
     self.cursor = 0
@@ -28,6 +29,9 @@ class ReplayMemory:
     self.total_rewards = np.zeros([config.replay_capacity], dtype=np.float32)
     # Store alive instead of done as it simplifies calculations elsewhere
     self.alives = np.zeros([config.replay_capacity], dtype=np.bool)
+    if self.prioritized:
+      self.priorities = ProportionalPriorities(config.replay_capacity,
+                                               config.alpha, config.beta)
 
   def store(self, observation, action, reward, done):
     self.observations[self.cursor] = observation
@@ -35,6 +39,8 @@ class ReplayMemory:
     self.rewards[self.cursor] = reward
     self.total_rewards[self.cursor] = reward
     self.alives[self.cursor] = not done
+    if self.prioritized:
+      self.priorities.set_to_max(self.cursor)
 
     if done:
       # Update total_rewards for episode
@@ -47,6 +53,12 @@ class ReplayMemory:
     self.cursor = (self.cursor + 1) % self.capacity
     self.count = min(self.count + 1, self.capacity)
 
+  def update_td_errors(self, indices, errors):
+    errors = np.absolute(errors)  # Probably not needed as TD-errors >= 0
+    if self.prioritized:
+      for index, error in zip(indices, errors):
+        self.priorities.update(index, error)
+
   def sample_batch(self, batch_size):
     indices = self.sample_indices(batch_size)
 
@@ -55,56 +67,164 @@ class ReplayMemory:
     rewards = self.rewards[indices]
     alives = self.alives[indices]
     next_observations = self.observations[(indices + 1) % self.capacity]
-    total_rewards = self.total_rewards[indices]
 
-    indices = indices.reshape(-1, 1)
+    if self.prioritized:
+      error_weights = self.priorities.error_weights(indices, self.count)
+    else:
+      error_weights = np.ones_like(indices)
+
     past_offsets = np.arange(-1, -self.constraint_steps - 1, -1)
-    past_indices = (indices + past_offsets) % self.capacity
+    past_indices = (indices.reshape(-1, 1) + past_offsets) % self.capacity
     past_observations = self.observations[past_indices]
     past_actions = self.actions[past_indices]
     past_rewards = self.rewards[past_indices]
     past_alives = self.alives[past_indices]
 
     future_offsets = np.arange(1, self.constraint_steps + 1)
-    future_indices = (indices + future_offsets) % self.capacity
+    future_indices = (indices.reshape(-1, 1) + future_offsets) % self.capacity
     future_observations = self.observations[(future_indices + 1) %
                                             self.capacity]
     future_rewards = self.rewards[future_indices]
     future_alives = self.alives[future_indices]
 
-    return SampleBatch(observations, actions, rewards, alives,
-                       next_observations, past_observations, past_actions,
-                       past_rewards, past_alives, future_observations,
-                       future_rewards, future_alives, total_rewards)
+    total_rewards = self.total_rewards[indices]
+
+    return SampleBatch(indices, observations, actions, rewards, alives,
+                       next_observations, error_weights, past_observations,
+                       past_actions, past_rewards, past_alives,
+                       future_observations, future_rewards, future_alives,
+                       total_rewards)
 
   def sample_indices(self, batch_size):
     indices = []
 
-    def valid_index(index):
-      # Indices must be unique
-      if index in indices:
-        return False
-
-      # Don't return states that may have incomplete constraint data
-      offset = self.constraint_steps + 1
-      close_below = (index <= self.cursor) and (self.cursor <= index + offset)
-      close_above = (index - offset <= self.cursor) and (self.cursor <= index)
-      if close_below or close_above:
-        return False
-
-      return True
-
     for i in range(batch_size):
-      index = np.random.randint(self.count)
-      while not valid_index(index):
-        index = np.random.randint(self.count)
+      index = self.sample_index()
+      while index in indices or not self.valid_index(index):
+        index = self.sample_index()
 
       indices.append(index)
 
     return np.array(indices)
 
+  def sample_index(self):
+    if self.prioritized:
+      return self.priorities.sample_index()
+    else:
+      return np.random.randint(self.count)
 
-SampleBatch = collections.namedtuple('SampleBatch', (
-    'observations', 'actions', 'rewards', 'alives', 'next_observations',
-    'past_observations', 'past_actions', 'past_rewards', 'past_alives',
-    'future_observations', 'future_rewards', 'future_alives', 'total_rewards'))
+  def valid_index(self, index):
+    # Don't return states that may have incomplete constraint data
+    offset = self.constraint_steps + 1
+    close_below = (index <= self.cursor) and (self.cursor <= index + offset)
+    close_above = (index - offset <= self.cursor) and (self.cursor <= index)
+
+    return not (close_below or close_above)
+
+
+SampleBatch = collections.namedtuple(
+    'SampleBatch',
+    ('indices', 'observations', 'actions', 'rewards', 'alives',
+     'next_observations', 'error_weights', 'past_observations', 'past_actions',
+     'past_rewards', 'past_alives', 'future_observations', 'future_rewards',
+     'future_alives', 'total_rewards'))
+
+
+class ProportionalPriorities:
+  """Track the priorities of each transition proportional to the TD-error
+
+  Contains a sum tree and a max tree for tracking values needed
+  Each tree is implemented with an np.array for efficiency"""
+
+  def __init__(self, capacity, alpha, beta):
+    self.capacity = capacity
+    self.alpha = alpha
+    self.beta = beta
+
+    self.sum_tree = np.zeros(2 * capacity - 1, dtype=np.float)
+    self.max_tree = np.zeros(2 * capacity - 1, dtype=np.float)
+
+  def total_priority(self):
+    return self.sum_tree[0]
+
+  def max_priority(self):
+    return self.max_tree[0] or 1  # Default priority if tree is empty
+
+  def set_to_max(self, leaf_index):
+    self.update_scaled(leaf_index, self.max_priority())
+
+  def update(self, leaf_index, priority):
+    scaled_priority = priority**self.alpha
+    self.update_scaled(leaf_index, scaled_priority)
+
+  def update_scaled(self, leaf_index, scaled_priority):
+    index = leaf_index + (self.capacity - 1)  # Skip the sum nodes
+
+    self.sum_tree[index] = scaled_priority
+    self.max_tree[index] = scaled_priority
+
+    self.update_parent_priorities(index)
+
+  def update_parent_priorities(self, index):
+    parent = self.parent(index)
+    sibling = self.sibling(index)
+
+    self.sum_tree[parent] = self.sum_tree[index] + self.sum_tree[sibling]
+    self.max_tree[parent] = max(self.max_tree[index], self.max_tree[sibling])
+
+    if parent > 0:
+      self.update_parent_priorities(parent)
+
+  def sample_index(self):
+    sample_value = np.random.random() * self.total_priority()
+    return self.index_of_value(sample_value)
+
+  def index_of_value(self, value):
+    index = 0
+    while True:
+      if self.is_leaf(index):
+        return index - (self.capacity - 1)
+
+      left_index = self.left_child(index)
+      left_value = self.sum_tree[left_index]
+      if value <= left_value:
+        index = left_index
+      else:
+        index = self.right_child(index)
+        value -= left_value
+
+  def error_weights(self, indices, count):
+    probabilities = self.sum_tree[indices + (self.capacity - 1)]
+    error_weights = (1 / (count * probabilities))**self.beta
+    return error_weights / error_weights.max()
+
+  def is_leaf(self, index):
+    return index >= self.capacity - 1
+
+  def parent(self, index):
+    return (index - 1) // 2
+
+  def sibling(self, index):
+    if index % 2 == 0:
+      return index - 1
+    else:
+      return index + 1
+
+  def left_child(self, index):
+    return (index * 2) + 1
+
+  def right_child(self, index):
+    return (index * 2) + 2
+
+  def __str__(self):
+    sum_tree, max_tree = '', ''
+    index = 0
+    while True:
+      end_index = index * 2 + 1
+      sum_tree += str(self.sum_tree[index:end_index]) + '\n'
+      max_tree += str(self.max_tree[index:end_index]) + '\n'
+
+      if index >= self.capacity: break
+      index = end_index
+
+    return ('Sum\n' + sum_tree + '\nMax\n' + max_tree).strip()

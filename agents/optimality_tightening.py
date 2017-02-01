@@ -26,10 +26,10 @@ class ConstraintNetwork:
     violation_penalty = lower_bound_penalty + upper_bound_penalty
 
     constraint_breaches = lower_bound_breached + upper_bound_breached
-    loss_rescaling = 1.0 / (
+    error_rescaling = 1.0 / (
         1.0 + constraint_breaches * self.penalty_coefficient)
 
-    return violation_penalty, loss_rescaling
+    return violation_penalty, error_rescaling
 
   def build_upper_bound(self, config):
     # Input frames
