@@ -32,7 +32,7 @@ class ReplayMemoryTest(tf.test.TestCase):
     for i in range(10):
       memory.store(i, i, i, False)
 
-    episode = memory.sample_batch(11)
+    episode = memory.sample_batch(11, 0)
 
     # Test near start
     i = 3
@@ -55,7 +55,7 @@ class ReplayMemoryTest(tf.test.TestCase):
     self.assertNear(episode.total_rewards[i], total_reward, err=0.000001)
 
   def test_proportional_priority(self):
-    priority = ProportionalPriorities(11, 1)
+    priority = ProportionalPriorities(11, 1, 0, 1)
     for i in range(11):
       priority.update(i, i)
 

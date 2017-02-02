@@ -48,7 +48,7 @@ flags.DEFINE_float(
 
 # Training
 flags.DEFINE_integer('batch_size', 32, 'Batch size')
-flags.DEFINE_integer('num_episodes', 100, 'Number of episodes to train on')
+flags.DEFINE_integer('num_steps', 50000000, 'Number of steps to train on')
 flags.DEFINE_string('train_dir', 'checkpoints',
                     'Directory to write checkpoints')
 flags.DEFINE_integer('summary_step_frequency', 100,
@@ -124,13 +124,15 @@ def train(config):
     # Initialize
     session.run(reset_target_network)
     step = 0
+    episode = 0
 
-    for episode in range(config.num_episodes):
+    while step < config.num_steps:
       # Start episode with random action
       start_time = time.time()
+      episode += 1
+      episode_steps = 0
       observation, episode_reward = atari.reset()
       done = False
-      episode_steps = 0
 
       # Play until losing
       while not done:
@@ -151,7 +153,7 @@ def train(config):
         episode_reward += reward
 
         # Train on random batch
-        batch = replay_memory.sample_batch(config.batch_size)
+        batch = replay_memory.sample_batch(config.batch_size, step)
         feed_dict = build_feed_dict(batch, policy_network, target_network,
                                     constraint_network, error_weights)
         if step % config.summary_step_frequency == 0:
@@ -161,7 +163,7 @@ def train(config):
           summary_writer.add_summary(summary, step)
         else:
           errors, _ = session.run([td_errors, train_op], feed_dict)
-        replay_memory.update_td_errors(batch.indices, errors)
+        replay_memory.update_priorities(batch.indices, errors)
 
         # Reset target_action_value network
         if step % config.target_network_update_frequency == 0:

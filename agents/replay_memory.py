@@ -30,8 +30,8 @@ class ReplayMemory:
     # Store alive instead of done as it simplifies calculations elsewhere
     self.alives = np.zeros([config.replay_capacity], dtype=np.bool)
     if self.prioritized:
-      self.priorities = ProportionalPriorities(config.replay_capacity,
-                                               config.alpha, config.beta)
+      self.priorities = ProportionalPriorities(
+          config.replay_capacity, config.alpha, config.beta, config.num_steps)
 
   def store(self, observation, action, reward, done):
     self.observations[self.cursor] = observation
@@ -53,13 +53,13 @@ class ReplayMemory:
     self.cursor = (self.cursor + 1) % self.capacity
     self.count = min(self.count + 1, self.capacity)
 
-  def update_td_errors(self, indices, errors):
+  def update_priorities(self, indices, errors):
     errors = np.absolute(errors)  # Probably not needed as TD-errors >= 0
     if self.prioritized:
       for index, error in zip(indices, errors):
         self.priorities.update(index, error)
 
-  def sample_batch(self, batch_size):
+  def sample_batch(self, batch_size, step):
     indices = self.sample_indices(batch_size)
 
     observations = self.observations[indices]
@@ -69,7 +69,7 @@ class ReplayMemory:
     next_observations = self.observations[(indices + 1) % self.capacity]
 
     if self.prioritized:
-      error_weights = self.priorities.error_weights(indices, self.count)
+      error_weights = self.priorities.error_weights(indices, self.count, step)
     else:
       error_weights = np.ones_like(indices)
 
@@ -136,10 +136,11 @@ class ProportionalPriorities:
   Contains a sum tree and a max tree for tracking values needed
   Each tree is implemented with an np.array for efficiency"""
 
-  def __init__(self, capacity, alpha, beta):
+  def __init__(self, capacity, alpha, beta, num_steps):
     self.capacity = capacity
     self.alpha = alpha
     self.beta = beta
+    self.beta_grad = (1 - beta) / num_steps
 
     self.sum_tree = np.zeros(2 * capacity - 1, dtype=np.float)
     self.max_tree = np.zeros(2 * capacity - 1, dtype=np.float)
@@ -193,10 +194,14 @@ class ProportionalPriorities:
         index = self.right_child(index)
         value -= left_value
 
-  def error_weights(self, indices, count):
+  def error_weights(self, indices, count, step):
     probabilities = self.sum_tree[indices + (self.capacity - 1)]
-    error_weights = (1 / (count * probabilities))**self.beta
+    beta = self.annealed_beta(step)
+    error_weights = (1 / (count * probabilities))**beta
     return error_weights / error_weights.max()
+
+  def annealed_beta(self, step):
+    return self.beta + self.beta_grad * step
 
   def is_leaf(self, index):
     return index >= self.capacity - 1
