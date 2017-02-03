@@ -21,8 +21,7 @@ class ReplayMemoryTest(tf.test.TestCase):
     config.optimality_tightening_steps = 4
     config.discount_rate = 0.99
     config.input_frames = 1
-    config.input_height = 1
-    config.input_width = 1
+    config.input_shape = [1, 1]
     config.replay_prioritized = False
     memory = TestReplayMemory(config)
 

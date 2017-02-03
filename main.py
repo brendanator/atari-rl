@@ -9,14 +9,14 @@ from atari.atari import Atari
 from agents import dqn, util
 from agents.optimality_tightening import ConstraintNetwork
 from agents.replay_memory import ReplayMemory
+from agents.exploration_bonus import ExplorationBonus
 
 flags = tf.app.flags
 
 # Environment
 flags.DEFINE_string('game', 'SpaceInvaders-v0',
                     'The OpenAI Gym environment to train on')
-flags.DEFINE_integer('input_height', 84, 'Rescale input to this height')
-flags.DEFINE_integer('input_width', 84, 'Rescale input to this width')
+flags.DEFINE_string('input_shape', '[84, 84]', 'Rescale input to this shape')
 flags.DEFINE_integer('input_frames', 4, 'Number of frames to input')
 flags.DEFINE_integer('num_frames_per_action', 4,
                      'Number of frames to repeat the chosen action for')
@@ -43,8 +43,14 @@ flags.DEFINE_integer(
     'optimality_tightening_steps', 4,
     'How many steps to use for calculate bounds in optimality tightening')
 flags.DEFINE_float(
-    'optimality_penalty_coefficient', 4.0,
+    'optimality_penalty_ratio', 4.0,
     'The ratio of constraint violation penalty compared to target loss')
+flags.DEFINE_bool('exploration_bonus', False,
+                  'Enable pseudo-count based exploration bonus')
+flags.DEFINE_float('exploration_beta', 0.05,
+                   'Value to scale the exploration bonus by')
+flags.DEFINE_string('exploration_image_shape', '[42, 42]',
+                    'Shape of image to use with CTS in exploration bonus')
 
 # Training
 flags.DEFINE_integer('batch_size', 32, 'Batch size')
@@ -76,10 +82,11 @@ def train(config):
   # Create environment
   atari = Atari(config.game, config)
   global_step = tf.contrib.framework.get_or_create_global_step()
+  exploration_bonus = ExplorationBonus(config)
 
-  # # Initialize replay memory
+  # Initialize replay memory
   replay_memory = ReplayMemory(config)
-  prepopulate_replay_memory(replay_memory, atari, config.replay_start_size)
+  prepopulate_replay_memory(replay_memory, atari, exploration_bonus, config)
 
   # Create action-value network
   policy_network = dqn.PolicyNetwork(config)
@@ -129,10 +136,10 @@ def train(config):
     while step < config.num_steps:
       # Start episode with random action
       start_time = time.time()
+      frames, episode_score, done = atari.reset()
+      observation = process_frames(frames, config)
       episode += 1
       episode_steps = 0
-      observation, episode_reward = atari.reset()
-      done = False
 
       # Play until losing
       while not done:
@@ -147,10 +154,10 @@ def train(config):
                                {policy_network.input_frames: [observation]})
 
         # Take action
-        next_observation, reward, done = atari.step(action)
-        replay_memory.store(observation, action, reward, done)
-        observation = next_observation
-        episode_reward += reward
+        observation, reward, done = take_action(atari, observation, action,
+                                                exploration_bonus,
+                                                replay_memory, config)
+        episode_score += reward
 
         # Train on random batch
         batch = replay_memory.sample_batch(config.batch_size, step)
@@ -170,7 +177,7 @@ def train(config):
           reset_target_network(action_value_scope, target_action_value_scope)
 
       # Log episode
-      log_episode(episode, start_time, episode_reward, episode_steps)
+      log_episode(episode, start_time, episode_score, episode_steps)
 
 
 def optimize(loss, global_step, config):
@@ -201,21 +208,51 @@ def optimize(loss, global_step, config):
   return train_op
 
 
-def prepopulate_replay_memory(replay_memory, atari, start_size):
+def process_reward(reward, frames, exploration_bonus, config):
+  if exploration_bonus:
+    reward += exploration_bonus.bonus(frames)
+
+  if config.reward_clipping:
+    reward = max(-config.reward_clipping, min(reward, config.reward_clipping))
+
+  return reward
+
+
+def process_frames(frames, config):
+  observation = []
+  for i in range(-config.input_frames, 0):
+    image = util.process_image(frames[i - 1:i], config.input_shape)
+    image /= 255.0  # Normalize each pixel between 0 and 1
+    observation.append(image)
+  return observation
+
+
+def prepopulate_replay_memory(replay_memory, atari, exploration_bonus, config):
   """Play game with random actions to populate the replay memory"""
 
   count = 0
   done = True
 
-  while count <= start_size or not done:
+  while count <= config.replay_start_size or not done:
     if done:
-      observation, _ = atari.reset(render=False)
+      frames, _, done = atari.reset()
+      observation = process_frames(frames, config)
 
     action = atari.sample_action()
-    next_observation, reward, done = atari.step(action, render=False)
-    replay_memory.store(observation, action, reward, done)
-    observation = next_observation
+    _, _, done = take_action(atari, observation, action, exploration_bonus,
+                             replay_memory, config)
     count += 1
+
+
+def take_action(atari, observation, action, exploration_bonus, replay_memory,
+                config):
+  frames, reward, done = atari.step(action)
+
+  training_reward = process_reward(reward, frames, exploration_bonus, config)
+  replay_memory.store(observation, action, training_reward, done)
+
+  next_observation = process_frames(frames, config)
+  return next_observation, reward, done
 
 
 def epsilon(step, config):
@@ -257,17 +294,21 @@ def build_feed_dict(batch, policy_network, target_network, constraint_network,
   return feed_dict
 
 
-def log_episode(episode, start_time, reward, steps):
+def log_episode(episode, start_time, score, steps):
   now = datetime.strftime(datetime.now(), '%F %X')
   duration = time.time() - start_time
   steps_per_sec = steps / duration
-  format_string = ('%s: Episode %d, reward %.0f '
+  format_string = ('%s: Episode %d, score %.0f '
                    '(%d steps, %.2f secs, %.2f steps/sec)')
-  print(format_string % (now, episode, reward, steps, duration, steps_per_sec))
+  print(format_string % (now, episode, score, steps, duration, steps_per_sec))
 
 
 def main(_):
-  train(flags.FLAGS)
+  config = flags.FLAGS
+  config.input_shape = eval(config.input_shape)
+  config.exploration_image_shape = eval(config.exploration_image_shape)
+
+  train(config)
 
 
 if __name__ == '__main__':

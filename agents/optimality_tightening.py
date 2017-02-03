@@ -8,7 +8,7 @@ from .dqn import TargetNetwork
 class ConstraintNetwork:
   def __init__(self, config):
     self.constraint_steps = config.optimality_tightening_steps
-    self.penalty_coefficient = config.optimality_penalty_coefficient
+    self.penalty_ratio = config.optimality_penalty_ratio
     self.lower_bound = self.build_lower_bound(config)
     self.upper_bound = self.build_upper_bound(config)
 
@@ -26,17 +26,15 @@ class ConstraintNetwork:
     violation_penalty = lower_bound_penalty + upper_bound_penalty
 
     constraint_breaches = lower_bound_breached + upper_bound_breached
-    error_rescaling = 1.0 / (
-        1.0 + constraint_breaches * self.penalty_coefficient)
+    error_rescaling = 1.0 / (1.0 + constraint_breaches * self.penalty_ratio)
 
     return violation_penalty, error_rescaling
 
   def build_upper_bound(self, config):
     # Input frames
-    self.past_input_frames = tf.placeholder(tf.float32, [
-        None, self.constraint_steps, config.input_frames, config.input_height,
-        config.input_width
-    ], 'past_input_frames')
+    self.past_input_frames = tf.placeholder(
+        tf.float32, [None, self.constraint_steps, config.input_frames
+                     ] + config.input_shape, 'past_input_frames')
     past_input_frames = tf.unstack(self.past_input_frames, axis=1)
 
     # Discounts
@@ -90,10 +88,9 @@ class ConstraintNetwork:
 
   def build_lower_bound(self, config):
     # Input frames
-    self.future_input_frames = tf.placeholder(tf.float32, [
-        None, self.constraint_steps, config.input_frames, config.input_height,
-        config.input_width
-    ], 'future_input_frames')
+    self.future_input_frames = tf.placeholder(
+        tf.float32, [None, self.constraint_steps, config.input_frames
+                     ] + config.input_shape, 'future_input_frames')
     future_input_frames = tf.unstack(self.future_input_frames, axis=1)
 
     # Future discounts for calculating rewards

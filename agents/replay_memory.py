@@ -19,10 +19,7 @@ class ReplayMemory:
 
     # Store all value in numpy arrays
     self.observations = np.zeros(
-        [
-            config.replay_capacity, config.input_frames, config.input_height,
-            config.input_width
-        ],
+        [config.replay_capacity, config.input_frames] + config.input_shape,
         dtype=np.float32)
     self.actions = np.zeros([config.replay_capacity], dtype=np.uint8)
     self.rewards = np.zeros([config.replay_capacity], dtype=np.float32)

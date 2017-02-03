@@ -16,10 +16,9 @@ class QNetwork:
       with tf.variable_scope('input'):
         # Input frames
         if input_frames is None:
-          self.input_frames = tf.placeholder(tf.float32, [
-              None, config.input_frames, config.input_height,
-              config.input_width
-          ], 'input_frames')
+          self.input_frames = tf.placeholder(
+              tf.float32, [None, config.input_frames] + config.input_shape,
+              'input_frames')
         else:
           # Reuse another QNetwork's input_frames
           self.input_frames = input_frames
