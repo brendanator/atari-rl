@@ -21,7 +21,7 @@ class Agent:
     self.policy_network = dqn.PolicyNetwork(config)
 
     # Create target action-value network
-    self.target_network = dqn.TargetNetwork(config)
+    self.target_network = dqn.TargetNetwork(self.policy_network, config)
 
     # Create operation to copy variables from policy network to target network
     self.reset_target_network_op = self.policy_network.copy_to_network(
@@ -41,16 +41,20 @@ class Agent:
     self.prepopulate_replay_memory()
 
   def build_loss(self):
-    self.td_errors = self.target_network.square_error(self.policy_network)
+    square_errors = self.target_network.square_errors(self.policy_network)
 
     if self.config.optimality_tightening:
-      self.constraint_network = ConstraintNetwork(self.config)
-      penalty, error_rescaling = self.constraint_network.violation_penalty(
-          self.policy_network)
-      self.td_errors = (self.td_errors + penalty) / error_rescaling
+      self.constraint_network = ConstraintNetwork(self.policy_network,
+                                                  self.config)
+      penalty = self.constraint_network.violation_penalty
+      error_rescaling = self.constraint_network.error_rescaling
+      square_errors = (square_errors + penalty) / error_rescaling
+
+    self.td_errors = tf.reduce_sum(square_errors, axis=1, name='td_errors')
 
     self.error_weights = tf.placeholder(tf.float32, [None], 'error_weights')
-    self.loss = tf.reduce_mean(self.error_weights * self.td_errors)
+    self.loss = tf.reduce_mean(
+        self.error_weights * self.td_errors, name='loss')
 
     if self.config.loss_clipping > 0:
       self.loss = tf.maximum(-self.config.loss_clipping,
@@ -88,12 +92,13 @@ class Agent:
     session.run(self.reset_target_network_op)
 
   def new_game(self):
+    self.policy_network.sample_head()
     frames, reward, done = self.atari.reset()
     self.observation = self.process_frames(frames)
     return self.observation, reward, done
 
   def action(self, observation, step, session):
-    # Epsilon greedy exploration/exploitation
+    # Epsilon greedy exploration/exploitation even for bootstrapped DQN
     if np.random.rand() < self.epsilon(step):
       return self.atari.sample_action()
     else:
@@ -190,5 +195,8 @@ class Agent:
           self.constraint_network.total_rewards: batch.total_rewards
       }
       feed_dict.update(constraint_feed_dict)
+
+    if self.config.bootstrapped and self.config.bootstrap_mask_probability < 1.0:
+      feed_dict[self.target_network.bootstrap_mask] = batch.bootstrap_mask
 
     return feed_dict

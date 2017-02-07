@@ -28,8 +28,9 @@ Learning to play Atari in TensorFlow using Deep Reinforcement Learning
     - Only proportional prioritized replay is implemented
 - :white_check_mark: [Unifying Count-Based Exploration and Intrinsic Motivation](https://arxiv.org/pdf/1606.01868.pdf)
     - `python3 main.py --exploration_bonus`
+- :white_check_mark: [Deep Exploration via Bootstrapped DQN](https://arxiv.org/pdf/1602.04621.pdf)
+    - `python3 main.py --bootstrapped`
 - :x: [Increasing the Action Gap: New Operators for Reinforcement Learning](https://arxiv.org/pdf/1512.04860.pdf)
-- :x: [Deep Exploration via Bootstrapped DQN](https://arxiv.org/pdf/1602.04621.pdf)
 - :x: [Deep Recurrent Q-Learning for Partially Observable MDPs](https://arxiv.org/pdf/1507.06527.pdf)
 - :x: [Learning functions across many orders of magnitudes](https://arxiv.org/pdf/1602.07714.pdf)
 - :x: [Safe and efficient Off-Policy Reinforcement Learning](https://arxiv.org/pdf/1606.02647.pdf)

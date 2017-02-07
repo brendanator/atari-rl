@@ -17,15 +17,23 @@ class ReplayMemory:
     self.cursor = 0
     self.count = 0
 
-    # Store all value in numpy arrays
+    # Store all values in numpy arrays
     self.observations = np.zeros(
         [config.replay_capacity, config.input_frames] + config.input_shape,
         dtype=np.float32)
     self.actions = np.zeros([config.replay_capacity], dtype=np.uint8)
     self.rewards = np.zeros([config.replay_capacity], dtype=np.float32)
     self.total_rewards = np.zeros([config.replay_capacity], dtype=np.float32)
+
     # Store alive instead of done as it simplifies calculations elsewhere
     self.alives = np.zeros([config.replay_capacity], dtype=np.bool)
+
+    # Might as well populate this upfront for all time
+    self.bootstrap_masks = np.random.binomial(
+        n=1,
+        p=config.bootstrap_mask_probability,
+        size=[config.replay_capacity, config.num_bootstrap_heads])
+
     if self.prioritized:
       self.priorities = ProportionalPriorities(
           config.replay_capacity, config.alpha, config.beta, config.num_steps)
@@ -85,12 +93,13 @@ class ReplayMemory:
     future_alives = self.alives[future_indices]
 
     total_rewards = self.total_rewards[indices]
+    bootstrap_mask = self.bootstrap_masks[indices]
 
     return SampleBatch(indices, observations, actions, rewards, alives,
                        next_observations, error_weights, past_observations,
                        past_actions, past_rewards, past_alives,
                        future_observations, future_rewards, future_alives,
-                       total_rewards)
+                       total_rewards, bootstrap_mask)
 
   def sample_indices(self, batch_size):
     indices = []
@@ -124,7 +133,7 @@ SampleBatch = collections.namedtuple(
     ('indices', 'observations', 'actions', 'rewards', 'alives',
      'next_observations', 'error_weights', 'past_observations', 'past_actions',
      'past_rewards', 'past_alives', 'future_observations', 'future_rewards',
-     'future_alives', 'total_rewards'))
+     'future_alives', 'total_rewards', 'bootstrap_mask'))
 
 
 class ProportionalPriorities:

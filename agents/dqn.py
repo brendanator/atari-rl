@@ -1,4 +1,5 @@
 import math
+import numpy as np
 import tensorflow as tf
 
 from . import util
@@ -31,87 +32,55 @@ class QNetwork:
           self.action_input = action_input
 
       with tf.variable_scope('conv1'):
-        conv1 = self.conv_layer(nhwc_input_frames, 8, 8, 4, 32)
+        conv1 = util.conv_layer(nhwc_input_frames, 8, 8, 4, 32)
 
       with tf.variable_scope('conv2'):
-        conv2 = self.conv_layer(conv1, 4, 4, 2, 64)
+        conv2 = util.conv_layer(conv1, 4, 4, 2, 64)
 
       with tf.variable_scope('conv3'):
-        conv3 = self.conv_layer(conv2, 3, 3, 1, 64)
-        conv3 = tf.reshape(conv3, [-1, 7 * 7 * 64])
+        conv3 = util.conv_layer(conv2, 3, 3, 1, 64)
+        conv_output = tf.reshape(conv3, [-1, 7 * 7 * 64])
 
-      with tf.variable_scope('output'):
-        self.action_values = self.action_values_layer(conv3, config)
+      self.num_heads = config.num_bootstrap_heads if config.bootstrapped else 1
 
-        self.taken_action_value = tf.reduce_sum(
-            self.action_values *
-            tf.one_hot(self.action_input, config.num_actions),
-            axis=1)
+      if self.num_heads > 1:
+        # Rescale gradients entering the last convolution layer
+        conv_output = util.scale_gradient(
+            conv_output, scale=1 / self.num_heads)
 
-        max_values, max_actions = tf.nn.top_k(self.action_values, k=1)
-        self.max_value = tf.squeeze(max_values, axis=1, name='max_value')
-        self.max_action = tf.squeeze(max_actions, axis=1, name='max_action')
+      self.heads = [
+          OutputHead(conv_output, self.action_input, 'head-%d' % i, config)
+          for i in range(self.num_heads)
+      ]
 
-  def action_values_layer(self, inputs, config):
-    if config.dueling:
-      # Rescale gradients entering the last convolution layer
-      with inputs.graph.gradient_override_map({'Identity': 'grad_over_sqrt2'}):
-        inputs = tf.identity(inputs)
+      self.heads_action_values = tf.pack(
+          [head.action_values for head in self.heads], axis=1)
 
-      hidden_value = self.fully_connected(
-          inputs, 512, activation_fn=tf.nn.relu, name='hidden_value')
-      value = self.fully_connected(
-          hidden_value, 1, activation_fn=tf.nn.relu, name='value')
+      self.heads_taken_action_value = tf.pack(
+          [head.taken_action_value for head in self.heads], axis=1)
 
-      hidden_actions = self.fully_connected(
-          inputs, 512, activation_fn=tf.nn.relu, name='hidden_actions')
-      actions = self.fully_connected(
-          hidden_actions,
-          config.num_actions,
-          activation_fn=tf.nn.relu,
-          name='actions')
+      self.heads_max_action = tf.pack(
+          [head.max_action for head in self.heads], axis=1)
 
-      return tf.identity(
-          value + actions - tf.reduce_mean(
-              actions, axis=1, keep_dims=True),
-          name='action_values')
+      self.using_ensemble = config.bootstrap_use_ensemble
+      if self.using_ensemble:
+        ensemble_votes = tf.reduce_sum(
+            tf.one_hot(self.heads_max_action, config.num_actions), axis=1)
+        # Add some noise to break ties
+        noise = tf.random_uniform([config.num_actions])
+        _, ensemble_max_action = tf.nn.top_k(ensemble_votes + noise, k=1)
+        self.ensemble_max_action = tf.squeeze(
+            ensemble_max_action, axis=1, name='ensemble_max_action')
 
+  def sample_head(self):
+    self.active_head = self.heads[np.random.randint(self.num_heads)]
+
+  @property
+  def max_action(self):
+    if self.using_ensemble:
+      return self.ensemble_max_action
     else:
-      hidden = self.fully_connected(
-          inputs, 512, activation_fn=tf.nn.relu, name='hidden')
-
-      return self.fully_connected(
-          hidden, config.num_actions, activation_fn=None, name='action_values')
-
-  def conv_layer(self, inputs, height, width, stride, filters):
-    kernel_shape = [height, width, inputs.get_shape().as_list()[-1], filters]
-    kernel = util.variable_with_weight_decay('weights', kernel_shape)
-    biases = util.variable_on_cpu('bias', [filters],
-                                  tf.constant_initializer(0.1))
-
-    conv = tf.nn.conv2d(
-        inputs, kernel, strides=[1, stride, stride, 1], padding='VALID')
-    bias = tf.nn.bias_add(conv, biases)
-    relu = tf.nn.relu(bias)
-
-    util.activation_summary(relu)
-    return relu
-
-  def fully_connected(self, inputs, size, activation_fn, name=None):
-    with tf.variable_scope(name):
-      weights_shape = [inputs.get_shape().as_list()[-1], size]
-      weights = util.variable_with_weight_decay('weights', weights_shape)
-      biases = util.variable_on_cpu('bias', [size],
-                                    tf.constant_initializer(0.1))
-
-      logits = tf.nn.xw_plus_b(inputs, weights, biases)
-      if activation_fn:
-        output = activation_fn(logits, name=name)
-      else:
-        output = tf.identity(logits, name=name)
-
-      util.activation_summary(output)
-      return output
+      return self.active_head.max_action
 
   def copy_to_network(self, to_network):
     """Copy the tensor variables with the same names between the two scopes"""
@@ -129,6 +98,53 @@ class QNetwork:
       return tf.no_op(name='copy_q_network')
 
 
+class OutputHead:
+  def __init__(self, inputs, action_input, name, config):
+    with tf.variable_scope(name):
+      self.action_values = self.action_values_layer(inputs, config)
+
+      # Policy only
+      self.taken_action_value = tf.reduce_sum(
+          self.action_values * tf.one_hot(action_input, config.num_actions),
+          axis=1)
+
+      max_values, max_actions = tf.nn.top_k(self.action_values, k=1)
+      # Target only
+      self.max_value = tf.squeeze(max_values, axis=1, name='max_value')
+      # Policy only
+      self.max_action = tf.squeeze(max_actions, axis=1, name='max_action')
+
+  def action_values_layer(self, inputs, config):
+    if config.dueling:
+      # Rescale gradients entering the last convolution layer
+      inputs = util.scale_gradient(inputs, scale=1 / math.sqrt(2))
+
+      hidden_value = util.fully_connected(
+          inputs, 512, activation_fn=tf.nn.relu, name='hidden_value')
+      value = util.fully_connected(
+          hidden_value, 1, activation_fn=tf.nn.relu, name='value')
+
+      hidden_actions = util.fully_connected(
+          inputs, 512, activation_fn=tf.nn.relu, name='hidden_actions')
+      actions = util.fully_connected(
+          hidden_actions,
+          config.num_actions,
+          activation_fn=tf.nn.relu,
+          name='actions')
+
+      return tf.identity(
+          value + actions - tf.reduce_mean(
+              actions, axis=1, keep_dims=True),
+          name='action_values')
+
+    else:
+      hidden = util.fully_connected(
+          inputs, 512, activation_fn=tf.nn.relu, name='hidden')
+
+      return util.fully_connected(
+          hidden, config.num_actions, activation_fn=None, name='action_values')
+
+
 class PolicyNetwork(QNetwork):
   def __init__(self, config, reuse=None, input_frames=None):
     self.scope = 'policy'
@@ -137,41 +153,53 @@ class PolicyNetwork(QNetwork):
 
 
 class TargetNetwork(QNetwork):
-  def __init__(self, config, reuse=None, input_frames=None, action_input=None):
+  def __init__(self,
+               policy_network,
+               config,
+               reuse=None,
+               input_frames=None,
+               action_input=None):
+    self.config = config
+    self.policy_network = policy_network
     self.scope = 'target'
     super(TargetNetwork, self).__init__(self.scope, reuse, config,
                                         input_frames, action_input)
+
     if config.double_q:
-      self.setup_double_q_max_value(config)
+      with tf.variable_scope('double_q'):
+        self.heads_max_action = tf.identity(
+            policy_network.heads_max_action, name='heads_max_action')
+
+        self.heads_max_value = tf.reduce_sum(
+            tf.one_hot(self.heads_max_action, config.num_actions) *
+            self.heads_action_values,
+            axis=2,
+            name='heads_max_value')
+    else:
+      self.heads_max_value = tf.pack(
+          [head.max_value for head in self.heads],
+          axis=1,
+          name='heads_max_value')
 
     self.reward_input = tf.placeholder(tf.float32, [None], name='reward')
     self.alive_input = tf.placeholder(tf.float32, [None], name='alive')
+    reward_input = tf.expand_dims(self.reward_input, axis=1)
+    alive_input = tf.expand_dims(self.alive_input, axis=1)
 
-    self.target_action_value = self.reward_input + (
-        self.alive_input * config.discount_rate * self.max_value)
+    self.heads_target_action_value = reward_input + (
+        alive_input * config.discount_rate * self.heads_max_value)
 
-  def setup_double_q_max_value(self, config):
-    self.policy_network = PolicyNetwork(
-        config, reuse=True, input_frames=self.input_frames)
-
-    with tf.variable_scope('double_q'):
-      self.max_action = tf.identity(
-          self.policy_network.max_action, name='max_action')
-
-      max_value = (tf.one_hot(self.max_action, config.num_actions) *
-                   self.action_values)
-      self.max_value = tf.reduce_sum(max_value, axis=1, name='max_value')
-
-  def square_error(self, policy_network):
-    # Use tf.stop_gradient to only update the action-value network,
+  def square_errors(self, policy_network):
+    # Use tf.stop_gradient to only update the policy action-value network,
     # not the target action-value network
-    square_error = tf.square(
-        tf.stop_gradient(self.target_action_value) -
-        policy_network.taken_action_value)
+    square_errors = tf.square(
+        tf.stop_gradient(self.heads_target_action_value) -
+        policy_network.heads_taken_action_value,
+        name='square_errors')
 
-    return square_error
+    if self.config.bootstrapped and self.config.bootstrap_mask_probability < 1.0:
+      self.bootstrap_mask = tf.placeholder(
+          tf.float32, [None, self.num_heads], name='bootstrap_mask')
+      square_errors *= self.bootstrap_mask
 
-
-@tf.RegisterGradient('grad_over_sqrt2')
-def grad_over_sqrt2(op, grad):
-  return grad / math.sqrt(2.0)
+    return square_errors

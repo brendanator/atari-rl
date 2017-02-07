@@ -20,7 +20,15 @@ flags.DEFINE_integer('random_reset_actions', 30,
                      'Number of random actions to perform at start of episode')
 
 # Agent
-flags.DEFINE_bool('double_q', False, 'Whether to use double Q-Learning')
+flags.DEFINE_bool('double_q', False, 'Whether to use Double Q-Learning')
+flags.DEFINE_bool('bootstrapped', False, 'Whether to use bootstrapped DQN')
+flags.DEFINE_integer('num_bootstrap_heads', 10,
+                     'Number of bootstrapped head to use')
+flags.DEFINE_float('bootstrap_mask_probability', 1.0,
+                   'Probability each head has of training on each experience')
+flags.DEFINE_bool(
+    'bootstrap_use_ensemble', False,
+    'Choose action with most bootstrap heads votes. Use only in evaluation')
 flags.DEFINE_integer('replay_capacity', 100000, 'Size of replay memory')
 flags.DEFINE_integer(
     'replay_start_size', 50000,
@@ -29,6 +37,8 @@ flags.DEFINE_bool('replay_prioritized', False,
                   'Enable prioritized replay memory')
 flags.DEFINE_float('alpha', 0.6, 'Prioritized experience replay exponent')
 flags.DEFINE_float('beta', 0.4, 'Initial importance sampling exponent')
+flags.DEFINE_integer('train_period', 4,
+                     'The number of steps between training updates')
 flags.DEFINE_integer(
     'target_network_update_period', 10000,
     'The number of parameter updates before the target network is updated')
@@ -115,11 +125,12 @@ def train(config):
         episode_score += reward
 
         # Train on random batch
-        if step % config.summary_step_period == 0:
-          agent.train(session, step)
-        else:
-          summary = agent.train(session, step, summary=True)
-          summary_writer.add_summary(summary, step)
+        if step % config.train_period == 0:
+          if step % config.summary_step_period == 0:
+            summary = agent.train(session, step, summary=True)
+            summary_writer.add_summary(summary, step)
+          else:
+            agent.train(session, step)
 
       # Log episode
       log_episode(episode, start_time, episode_score, episode_steps)

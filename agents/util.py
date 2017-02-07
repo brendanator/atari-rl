@@ -102,3 +102,48 @@ def add_loss_summaries(total_loss):
     tf.summary.scalar('loss', loss_averages.average(l))
 
   return loss_averages_op
+
+
+def conv_layer(inputs, height, width, stride, filters):
+  kernel_shape = [height, width, inputs.get_shape().as_list()[-1], filters]
+  kernel = variable_with_weight_decay('weights', kernel_shape)
+  biases = variable_on_cpu('bias', [filters], tf.constant_initializer(0.1))
+
+  conv = tf.nn.conv2d(
+      inputs, kernel, strides=[1, stride, stride, 1], padding='VALID')
+  bias = tf.nn.bias_add(conv, biases)
+  relu = tf.nn.relu(bias)
+
+  activation_summary(relu)
+  return relu
+
+
+def fully_connected(inputs, size, activation_fn, name=None):
+  with tf.variable_scope(name):
+    weights_shape = [inputs.get_shape().as_list()[-1], size]
+    weights = variable_with_weight_decay('weights', weights_shape)
+    biases = variable_on_cpu('bias', [size], tf.constant_initializer(0.1))
+
+    logits = tf.nn.xw_plus_b(inputs, weights, biases)
+    if activation_fn:
+      output = activation_fn(logits, name=name)
+    else:
+      output = tf.identity(logits, name=name)
+
+    activation_summary(output)
+    return output
+
+
+GRADIENT_SCALING = 'gradient_scaled_by_'
+
+
+def scale_gradient(inputs, scale):
+  with inputs.graph.gradient_override_map({'Identity': 'scaled_gradient'}):
+    return tf.identity(inputs, name=GRADIENT_SCALING + str(scale))
+
+
+@tf.RegisterGradient('scaled_gradient')
+def scaled_gradient(op, grad):
+  scale_index = op.name.rfind(GRADIENT_SCALING) + len(GRADIENT_SCALING)
+  scale = float(op.name[scale_index:])
+  return grad * scale
