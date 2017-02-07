@@ -1,4 +1,4 @@
 [submodule "third-party/cts"]
 	path = third-party/cts
-	url = https://github.com/mgbellemare/SkipCTS
+	url = https://github.com/brendanator/SkipCTS
 	branch = master
