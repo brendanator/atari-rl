@@ -30,7 +30,8 @@ Learning to play Atari in TensorFlow using Deep Reinforcement Learning
     - `python3 main.py --exploration_bonus`
 - :white_check_mark: [Deep Exploration via Bootstrapped DQN](https://arxiv.org/pdf/1602.04621.pdf)
     - `python3 main.py --bootstrapped`
-- :x: [Increasing the Action Gap: New Operators for Reinforcement Learning](https://arxiv.org/pdf/1512.04860.pdf)
+- :white_check_mark: [Increasing the Action Gap: New Operators for Reinforcement Learning](https://arxiv.org/pdf/1512.04860.pdf)
+    - `python3 main.py --persistent_advantage_learning`
 - :x: [Deep Recurrent Q-Learning for Partially Observable MDPs](https://arxiv.org/pdf/1507.06527.pdf)
 - :x: [Learning functions across many orders of magnitudes](https://arxiv.org/pdf/1602.07714.pdf)
 - :x: [Safe and efficient Off-Policy Reinforcement Learning](https://arxiv.org/pdf/1606.02647.pdf)

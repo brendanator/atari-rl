@@ -36,7 +36,8 @@ class ReplayMemory:
 
     if self.prioritized:
       self.priorities = ProportionalPriorities(
-          config.replay_capacity, config.alpha, config.beta, config.num_steps)
+          config.replay_capacity, config.replay_alpha, config.replay_beta,
+          config.num_steps)
 
   def store(self, observation, action, reward, done):
     self.observations[self.cursor] = observation
@@ -59,7 +60,7 @@ class ReplayMemory:
     self.count = min(self.count + 1, self.capacity)
 
   def update_priorities(self, indices, errors):
-    errors = np.absolute(errors)  # Probably not needed as TD-errors >= 0
+    errors = np.absolute(errors)
     if self.prioritized:
       for index, error in zip(indices, errors):
         self.priorities.update(index, error)
@@ -146,7 +147,7 @@ class ProportionalPriorities:
     self.capacity = capacity
     self.alpha = alpha
     self.beta = beta
-    self.beta_grad = (1 - beta) / num_steps
+    self.beta_grad = (1.0 - beta) / num_steps
 
     self.sum_tree = np.zeros(2 * capacity - 1, dtype=np.float)
     self.max_tree = np.zeros(2 * capacity - 1, dtype=np.float)
@@ -203,7 +204,7 @@ class ProportionalPriorities:
   def error_weights(self, indices, count, step):
     probabilities = self.sum_tree[indices + (self.capacity - 1)]
     beta = self.annealed_beta(step)
-    error_weights = (1 / (count * probabilities))**beta
+    error_weights = (1.0 / (count * probabilities))**beta
     return error_weights / error_weights.max()
 
   def annealed_beta(self, step):

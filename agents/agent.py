@@ -41,7 +41,33 @@ class Agent:
     self.prepopulate_replay_memory()
 
   def build_loss(self):
-    square_errors = self.target_network.square_errors(self.policy_network)
+    # TD-errors are calculated per bootstrap head
+    td_errors = (self.target_network.heads_target_action_value -
+                 self.policy_network.heads_taken_action_value)
+
+    if self.config.persistent_advantage_learning:
+      self.advantage_learning_net = dqn.TargetNetwork(
+          self.policy_network, self.config, reuse=True)
+      self.next_state_advantage_learning_net = dqn.TargetNetwork(
+          self.policy_network, self.config, reuse=True)
+
+      advantage_learning = td_errors - self.config.pal_alpha * (
+          self.advantage_learning_net.heads_max_value -
+          self.advantage_learning_net.heads_taken_action_value)
+
+      next_state_advantage_learning = td_errors - self.config.pal_alpha * (
+          self.next_state_advantage_learning_net.heads_max_value -
+          self.next_state_advantage_learning_net.heads_taken_action_value)
+
+      persistent_advantage_learning = tf.maximum(
+          advantage_learning,
+          next_state_advantage_learning,
+          name='persistent_advantage_learning')
+
+      td_errors = persistent_advantage_learning
+
+    # Square error are also calculated per bootstrap head
+    square_errors = tf.square(td_errors)
 
     if self.config.optimality_tightening:
       self.constraint_network = ConstraintNetwork(self.policy_network,
@@ -50,15 +76,18 @@ class Agent:
       error_rescaling = self.constraint_network.error_rescaling
       square_errors = (square_errors + penalty) / error_rescaling
 
-    self.td_errors = tf.reduce_sum(square_errors, axis=1, name='td_errors')
-
+    # Sum bootstrap heads
+    self.td_errors = tf.reduce_sum(td_errors, axis=1, name='td_errors')
     self.error_weights = tf.placeholder(tf.float32, [None], 'error_weights')
     self.loss = tf.reduce_mean(
-        self.error_weights * self.td_errors, name='loss')
+        self.error_weights * tf.reduce_sum(
+            square_errors, axis=1), name='loss')
 
     if self.config.loss_clipping > 0:
-      self.loss = tf.maximum(-self.config.loss_clipping,
-                             tf.minimum(self.loss, self.config.loss_clipping))
+      self.loss = tf.maximum(
+          -self.config.loss_clipping,
+          tf.minimum(self.loss, self.config.loss_clipping),
+          name='loss')
 
   def build_train_op(self):
     # Create global step
@@ -72,11 +101,14 @@ class Agent:
 
     # Minimize loss
     with tf.control_dependencies([loss_averages_op]):
-      grads = opt.compute_gradients(self.loss)
+      grads = opt.compute_gradients(
+          self.loss, var_list=self.policy_network.variables())
+
       if self.config.grad_clipping:
         grads = [(tf.clip_by_value(grad, -self.config.grad_clipping,
                                    self.config.grad_clipping), var)
                  for grad, var in grads if grad is not None]
+
       self.train_op = opt.apply_gradients(grads, global_step=global_step)
 
     # Add histograms for trainable variables.
@@ -197,6 +229,16 @@ class Agent:
       feed_dict.update(constraint_feed_dict)
 
     if self.config.bootstrapped and self.config.bootstrap_mask_probability < 1.0:
-      feed_dict[self.target_network.bootstrap_mask] = batch.bootstrap_mask
+      feed_dict[self.policy_network.bootstrap_mask] = batch.bootstrap_mask
+
+    if self.config.persistent_advantage_learning:
+      persistent_advantage_feed_dict = {
+          self.advantage_learning_net.input_frames: batch.observations,
+          self.advantage_learning_net.action_input: batch.actions,
+          self.next_state_advantage_learning_net.input_frames:
+          batch.next_observations,
+          self.next_state_advantage_learning_net.action_input: batch.actions
+      }
+      feed_dict.update(persistent_advantage_feed_dict)
 
     return feed_dict

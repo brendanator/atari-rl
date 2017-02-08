@@ -9,16 +9,16 @@ class ConstraintNetwork:
   def __init__(self, policy_network, config):
     self.policy_network = policy_network
     self.constraint_steps = config.optimality_tightening_steps
-    self.lower_bound = self.build_lower_bound(policy_network, config)
-    self.upper_bound = self.build_upper_bound(policy_network, config)
 
-    lower_bound = tf.stop_gradient(self.lower_bound)
-    lower_bound_difference = lower_bound - policy_network.heads_taken_action_value
+    lower_bound = self.build_lower_bound(policy_network, config)
+    lower_bound_difference = (
+        lower_bound - policy_network.heads_taken_action_value)
     lower_bound_breached = tf.to_float(lower_bound_difference > 0)
     lower_bound_penalty = tf.square(tf.nn.relu(lower_bound_difference))
 
-    upper_bound = tf.stop_gradient(self.upper_bound)
-    upper_bound_difference = policy_network.heads_taken_action_value - upper_bound
+    upper_bound = self.build_upper_bound(policy_network, config)
+    upper_bound_difference = (
+        policy_network.heads_taken_action_value - upper_bound)
     upper_bound_breached = tf.to_float(upper_bound_difference > 0)
     upper_bound_penalty = tf.square(tf.nn.relu(upper_bound_difference))
 

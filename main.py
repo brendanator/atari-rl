@@ -35,8 +35,12 @@ flags.DEFINE_integer(
     'Pre-populate the replay memory with this number of random actions')
 flags.DEFINE_bool('replay_prioritized', False,
                   'Enable prioritized replay memory')
-flags.DEFINE_float('alpha', 0.6, 'Prioritized experience replay exponent')
-flags.DEFINE_float('beta', 0.4, 'Initial importance sampling exponent')
+flags.DEFINE_float('replay_alpha', 0.6,
+                   'Prioritized experience replay exponent')
+flags.DEFINE_float('replay_beta', 0.4, 'Initial importance sampling exponent')
+flags.DEFINE_bool('persistent_advantage_learning', False,
+                  'Enable persistent advantage learning')
+flags.DEFINE_float('pal_alpha', 0.9, 'Persistent advantage learning alpha')
 flags.DEFINE_integer('train_period', 4,
                      'The number of steps between training updates')
 flags.DEFINE_integer(
