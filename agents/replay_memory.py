@@ -2,7 +2,7 @@ import numpy as np
 import collections
 
 
-class ReplayMemory:
+class ReplayMemory(object):
   def __init__(self, config):
     # Config
     self.capacity = config.replay_capacity
@@ -137,7 +137,7 @@ SampleBatch = collections.namedtuple(
      'future_alives', 'total_rewards', 'bootstrap_mask'))
 
 
-class ProportionalPriorities:
+class ProportionalPriorities(object):
   """Track the priorities of each transition proportional to the TD-error
 
   Contains a sum tree and a max tree for tracking values needed

@@ -5,7 +5,7 @@ import math
 from .dqn import TargetNetwork
 
 
-class ConstraintNetwork:
+class ConstraintNetwork(object):
   def __init__(self, policy_network, config):
     self.policy_network = policy_network
     self.constraint_steps = config.optimality_tightening_steps
@@ -78,7 +78,7 @@ class ConstraintNetwork:
 
       # Ignore upper bound if game hasn't started yet
       upper_bound = tf.select(past_alive, upper_bound,
-                              tf.ones_like(upper_bound) * math.inf)
+                              tf.ones_like(upper_bound) * float('inf'))
 
       upper_bounds.append(upper_bound)
 
@@ -133,7 +133,7 @@ class ConstraintNetwork:
 
       # Ignore lower bound if game is finished
       lower_bound = tf.select(future_alive, lower_bound,
-                              tf.ones_like(lower_bound) * -math.inf)
+                              tf.ones_like(lower_bound) * float('-inf'))
 
       lower_bounds.append(lower_bound)
 

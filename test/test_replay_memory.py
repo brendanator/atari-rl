@@ -12,7 +12,7 @@ class TestReplayMemory(ReplayMemory):
 
 class ReplayMemoryTest(tf.test.TestCase):
   def test_replay_memory(self):
-    class Config:
+    class Config(object):
       pass
 
     config = Config()

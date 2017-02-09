@@ -5,7 +5,7 @@ import tensorflow as tf
 from . import util
 
 
-class QNetwork:
+class QNetwork(object):
   def __init__(self,
                scope,
                reuse,
@@ -105,10 +105,11 @@ class QNetwork:
         self.ensemble_max_action = tf.squeeze(
             ensemble_max_action, axis=1, name='ensemble_max_action')
     else:
-      head = OutputHead(conv_output, self.action_input, 'output' % i, config)
-      self.heads_action_values = heads.action_values
-      self.heads_taken_action_value = heads.taken_action_value
-      self.heads_max_action = heads.max_action
+      head = OutputHead(conv_output, self.action_input, 'output', config)
+      self.heads = [head]
+      self.heads_action_values = head.action_values
+      self.heads_taken_action_value = head.taken_action_value
+      self.heads_max_action = head.max_action
 
   def apply_bootstrap_mask(self, inputs):
     if self.bootstrap_mask:
@@ -141,7 +142,7 @@ class QNetwork:
       return tf.no_op(name='copy_q_network')
 
 
-class OutputHead:
+class OutputHead(object):
   def __init__(self, inputs, action_input, name, config):
     with tf.variable_scope(name):
       self.action_values = self.action_values_layer(inputs, config)

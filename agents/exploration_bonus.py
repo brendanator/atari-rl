@@ -5,7 +5,7 @@ from .cts.model import CTS
 from . import util
 
 
-class ExplorationBonus:
+class ExplorationBonus(object):
   def __init__(self, config):
     self.image_shape = config.exploration_image_shape
     self.beta = config.exploration_beta

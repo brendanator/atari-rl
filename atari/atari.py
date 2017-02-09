@@ -3,7 +3,7 @@ import re
 from gym.envs.atari.atari_env import AtariEnv
 
 
-class Atari:
+class Atari(object):
   def __init__(self, config):
     game = '_'.join(
         [g.lower() for g in re.findall('[A-Z]?[a-z]+', config.game)])

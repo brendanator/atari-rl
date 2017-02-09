@@ -9,7 +9,7 @@ from agents.exploration_bonus import ExplorationBonus
 import tensorflow as tf
 
 
-class Agent:
+class Agent(object):
   def __init__(self, config):
     self.config = config
 
