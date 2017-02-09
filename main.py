@@ -10,12 +10,16 @@ from agents.agent import Agent
 flags = tf.app.flags
 
 # Environment
-flags.DEFINE_string('game', 'SpaceInvaders-v0',
-                    'The OpenAI Gym environment to train on')
+flags.DEFINE_string('game', 'SpaceInvaders',
+                    'The Arcade Learning Environment game to play')
+flags.DEFINE_string('frameskip', '4',
+                    'Number of frames to repeat actions for. '
+                    'Can be int or tuple with min and max+1')
+flags.DEFINE_float(
+    'repeat_action_probability', 0.25,
+    'Probability of ignoring the agent action and repeat last action')
 flags.DEFINE_string('input_shape', '[84, 84]', 'Rescale input to this shape')
 flags.DEFINE_integer('input_frames', 4, 'Number of frames to input')
-flags.DEFINE_integer('num_frames_per_action', 4,
-                     'Number of frames to repeat the chosen action for')
 flags.DEFINE_integer('random_reset_actions', 30,
                      'Number of random actions to perform at start of episode')
 
@@ -151,6 +155,7 @@ def log_episode(episode, start_time, score, steps):
 
 def main(_):
   config = flags.FLAGS
+  config.frameskip = eval(config.frameskip)
   config.input_shape = eval(config.input_shape)
   config.exploration_image_shape = eval(config.exploration_image_shape)
 

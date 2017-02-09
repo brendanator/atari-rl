@@ -5,13 +5,13 @@ Learning to play Atari in TensorFlow using Deep Reinforcement Learning
 ## Requirements
 
 - Python 3
-- [gym](https://gym.openai.com)
+- [OpenAI Gym](https://gym.openai.com) with the [Arcade Learning Environment](https://github.com/mgbellemare/Arcade-Learning-Environment) - `pip install 'gym[all]'`
 - [TensorFlow 0.12.0](https://www.tensorflow.org)
 
 ## Usage
 
 - Show all options - `python3 main.py --help`
-- Play a specific [atari game](https://gym.openai.com/envs#atari) - `python3 main.py --game Breakout-v0`
+- Play a specific [Atari game](https://github.com/mgbellemare/Arcade-Learning-Environment/blob/master/src/games/Roms.cpp#L17) - `python3 main.py --game Breakout`
 
 ## Papers Implemented
 

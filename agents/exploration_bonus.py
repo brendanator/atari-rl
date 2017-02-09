@@ -16,7 +16,7 @@ class ExplorationBonus:
 
   def bonus(self, frames):
     # Get 8-bit image
-    image = util.process_image(frames[-2:], self.image_shape)
+    image = util.process_image(frames[-2], frames[-1], self.image_shape)
     image = (image // 32).astype(np.uint8)
 
     # Calculate pseudo count

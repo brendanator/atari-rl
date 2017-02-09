@@ -14,7 +14,7 @@ class Agent:
     self.config = config
 
     # Create environment
-    self.atari = Atari(config.game, config)
+    self.atari = Atari(config)
     self.exploration_bonus = ExplorationBonus(config)
 
     # Create action-value network
@@ -150,7 +150,8 @@ class Agent:
   def process_frames(self, frames):
     observation = []
     for i in range(-self.config.input_frames, 0):
-      image = util.process_image(frames[i - 1:i], self.config.input_shape)
+      image = util.process_image(frames[i - 1], frames[i],
+                                 self.config.input_shape)
       image /= 255.0  # Normalize each pixel between 0 and 1
       observation.append(image)
     return observation

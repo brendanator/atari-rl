@@ -5,9 +5,9 @@ import tensorflow as tf
 LUMINANCE_RATIOS = [0.2126, 0.7152, 0.0722]
 
 
-def process_image(frames, shape):
+def process_image(frame1, frame2, shape):
   # Max last 2 frames to remove flicker
-  image = np.stack(frames[-2:], axis=3).max(axis=3)
+  image = np.stack([frame1, frame2], axis=3).max(axis=3)
 
   # Rescale image
   image = scipy.misc.imresize(image, shape)
