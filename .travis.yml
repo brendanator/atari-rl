@@ -1,0 +1,29 @@
+dist: trusty
+addons:
+  apt_packages:
+    - swig
+language: python
+python:
+  - 2.7
+  - 3.5
+install:
+  - pip install --upgrade pip setuptools wheel
+  - pip install --only-binary=numpy,scipy numpy scipy
+  - if [[ "$TRAVIS_PYTHON_VERSION" == "2.7" ]]; then
+      pip install https://storage.googleapis.com/tensorflow/linux/cpu/tensorflow-0.12.1-cp27-none-linux_x86_64.whl;
+    elif [[ "$TRAVIS_PYTHON_VERSION" == "3.5" ]]; then
+      pip install https://storage.googleapis.com/tensorflow/linux/cpu/tensorflow-0.12.1-cp35-cp35m-linux_x86_64.whl;
+    fi
+  - pip install -r requirements.txt
+script:
+  - pytest
+  - python main.py --replay_start_size 8 --num_steps 8 --summary_step_period 4
+  - python main.py --game air_raid --replay_start_size 8 --num_steps 8 --summary_step_period 4 --boostrapped
+  - python main.py --game amidar --replay_start_size 8 --num_steps 8 --summary_step_period 4 --dueling
+  - python main.py --game assault --replay_start_size 8 --num_steps 8 --summary_step_period 4 --double_q
+  - python main.py --game asterix --replay_start_size 8 --num_steps 8 --summary_step_period 4 --exploration_bonus
+  - python main.py --game asteroids --replay_start_size 8 --num_steps 8 --summary_step_period 4 --optimality_tightening
+  - python main.py --game atlantis --replay_start_size 8 --num_steps 8 --summary_step_period 4 --persistent_advantage_learning
+  - python main.py --game BankHeist --replay_start_size 8 --num_steps 8 --summary_step_period 4 --replay_prioritized
+  - python main.py --game battle_zone --replay_start_size 8 --num_steps 8 --summary_step_period 4 --reward_scaling
+  - python main.py --game zaxxon --replay_start_size 8 --num_steps 8 --summary_step_period 4 --boostrapped --dueling --double_q --exploration_bonus --optimality_tightening --persistent_advantage_learning --replay_prioritized --reward_scaling

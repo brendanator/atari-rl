@@ -1,11 +1,13 @@
 # Atari - Deep Reinforcement Learning algorithms in TensorFlow
 
+![https:/travis-ci.org/brendanator/atari-rl](https://travis-ci.org/brendanator/atari-rl.svg?branch=master)
+
 Learning to play Atari in TensorFlow using Deep Reinforcement Learning
 
 ## Requirements
 
 - Python 2/3 - mainly tested with python3
-- [OpenAI Gym](https://gym.openai.com) with the [Arcade Learning Environment](https://github.com/mgbellemare/Arcade-Learning-Environment) - `pip install 'gym[all]'`
+- [OpenAI Gym](https://gym.openai.com) with the [Arcade Learning Environment](https://github.com/mgbellemare/Arcade-Learning-Environment)
 - [TensorFlow 0.12.0](https://www.tensorflow.org)
 
 ## Usage
