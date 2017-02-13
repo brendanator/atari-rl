@@ -5,6 +5,7 @@ from atari.atari import Atari
 from agents import dqn, util
 from agents.optimality_tightening import ConstraintNetwork
 from agents.replay_memory import ReplayMemory
+from agents.reward_scaling import RewardScaling
 from agents.exploration_bonus import ExplorationBonus
 import tensorflow as tf
 
@@ -17,11 +18,18 @@ class Agent(object):
     self.atari = Atari(config)
     self.exploration_bonus = ExplorationBonus(config)
 
+    # Reward Scaling
+    if config.reward_scaling:
+      self.reward_scaling = RewardScaling(config)
+    else:
+      self.reward_scaling = None
+
     # Create action-value network
-    self.policy_network = dqn.PolicyNetwork(config)
+    self.policy_network = dqn.PolicyNetwork(self.reward_scaling, config)
 
     # Create target action-value network
-    self.target_network = dqn.TargetNetwork(self.policy_network, config)
+    self.target_network = dqn.TargetNetwork(self.policy_network,
+                                            self.reward_scaling, config)
 
     # Create operation to copy variables from policy network to target network
     self.reset_target_network_op = self.policy_network.copy_to_network(
@@ -42,22 +50,22 @@ class Agent(object):
 
   def build_loss(self):
     # TD-errors are calculated per bootstrap head
-    td_errors = (self.target_network.heads_target_action_value -
-                 self.policy_network.heads_taken_action_value)
+    td_errors = (self.target_network.target_action_values +
+                 self.policy_network.taken_action_values)
 
     if self.config.persistent_advantage_learning:
       self.advantage_learning_net = dqn.TargetNetwork(
-          self.policy_network, self.config, reuse=True)
+          self.policy_network, self.reward_scaling, self.config, reuse=True)
       self.next_state_advantage_learning_net = dqn.TargetNetwork(
-          self.policy_network, self.config, reuse=True)
+          self.policy_network, self.reward_scaling, self.config, reuse=True)
 
       advantage_learning = td_errors - self.config.pal_alpha * (
-          self.advantage_learning_net.heads_max_value -
-          self.advantage_learning_net.heads_taken_action_value)
+          self.advantage_learning_net.values -
+          self.advantage_learning_net.taken_action_values)
 
       next_state_advantage_learning = td_errors - self.config.pal_alpha * (
-          self.next_state_advantage_learning_net.heads_max_value -
-          self.next_state_advantage_learning_net.heads_taken_action_value)
+          self.next_state_advantage_learning_net.values -
+          self.next_state_advantage_learning_net.taken_action_values)
 
       persistent_advantage_learning = tf.maximum(
           advantage_learning,
@@ -66,23 +74,33 @@ class Agent(object):
 
       td_errors = persistent_advantage_learning
 
-    # Square error are also calculated per bootstrap head
+    # Square errors are also calculated per bootstrap head
     square_errors = tf.square(td_errors)
 
     if self.config.optimality_tightening:
-      self.constraint_network = ConstraintNetwork(self.policy_network,
-                                                  self.config)
+      self.constraint_network = ConstraintNetwork(
+          self.policy_network, self.reward_scaling, self.config)
       penalty = self.constraint_network.violation_penalty
       error_rescaling = self.constraint_network.error_rescaling
       square_errors = (square_errors + penalty) / error_rescaling
 
+    # Apply bootstrap mask
+    if self.config.bootstrapped and self.config.bootstrap_mask_probability < 1.0:
+      self.bootstrap_mask = tf.placeholder(
+          tf.float32, [None, self.policy_network.num_heads],
+          name='bootstrap_mask')
+      td_errors *= self.bootstrap_mask
+      square_errors *= self.bootstrap_mask
+
     # Sum bootstrap heads
     self.td_errors = tf.reduce_sum(td_errors, axis=1, name='td_errors')
-    self.error_weights = tf.placeholder(tf.float32, [None], 'error_weights')
-    self.loss = tf.reduce_mean(
-        self.error_weights * tf.reduce_sum(
-            square_errors, axis=1), name='loss')
+    square_error = tf.reduce_sum(square_errors, axis=1, name='square_error')
 
+    # Apply importance sampling
+    self.error_weights = tf.placeholder(tf.float32, [None], 'error_weights')
+    self.loss = tf.reduce_mean(self.error_weights * square_error, name='loss')
+
+    # Clip loss
     if self.config.loss_clipping > 0:
       self.loss = tf.maximum(
           -self.config.loss_clipping,
@@ -101,14 +119,34 @@ class Agent(object):
 
     # Minimize loss
     with tf.control_dependencies([loss_averages_op]):
-      grads = opt.compute_gradients(
-          self.loss, var_list=self.policy_network.variables())
+      # Variables to update
+      policy_variables = self.policy_network.variables
+      if self.reward_scaling:
+        reward_scaling_variables = self.reward_scaling.variables
+      else:
+        reward_scaling_variables = []
 
+      # Compute gradients
+      grads = opt.compute_gradients(
+          self.loss, var_list=policy_variables + reward_scaling_variables)
+
+      # Apply normalized SGD for reward scaling
+      if self.reward_scaling:
+        grads_ = []
+        for grad, var in grads:
+          if grad is not None:
+            if var in policy_variables:
+              grad /= self.reward_scaling.sigma_squared_input
+            grads_.append((grad, var))
+        grads = grads_
+
+      # Clip gradients
       if self.config.grad_clipping:
         grads = [(tf.clip_by_value(grad, -self.config.grad_clipping,
                                    self.config.grad_clipping), var)
                  for grad, var in grads if grad is not None]
 
+      # Create training op
       self.train_op = opt.apply_gradients(grads, global_step=global_step)
 
     # Add histograms for trainable variables.
@@ -160,7 +198,7 @@ class Agent(object):
     if self.config.exploration_bonus:
       reward += self.exploration_bonus.bonus(frames)
 
-    if self.config.reward_clipping:
+    if self.config.reward_clipping and not self.config.reward_scaling:
       reward = max(-self.config.reward_clipping,
                    min(reward, self.config.reward_clipping))
 
@@ -230,7 +268,7 @@ class Agent(object):
       feed_dict.update(constraint_feed_dict)
 
     if self.config.bootstrapped and self.config.bootstrap_mask_probability < 1.0:
-      feed_dict[self.policy_network.bootstrap_mask] = batch.bootstrap_mask
+      feed_dict[self.bootstrap_mask] = batch.bootstrap_mask
 
     if self.config.persistent_advantage_learning:
       persistent_advantage_feed_dict = {
@@ -241,5 +279,9 @@ class Agent(object):
           self.next_state_advantage_learning_net.action_input: batch.actions
       }
       feed_dict.update(persistent_advantage_feed_dict)
+
+    if self.reward_scaling:
+      feed_dict[self.reward_scaling.sigma_squared_input] = (
+          self.reward_scaling.sigma_squared(batch.rewards))
 
     return feed_dict

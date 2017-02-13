@@ -45,6 +45,11 @@ flags.DEFINE_float('replay_beta', 0.4, 'Initial importance sampling exponent')
 flags.DEFINE_bool('persistent_advantage_learning', False,
                   'Enable persistent advantage learning')
 flags.DEFINE_float('pal_alpha', 0.9, 'Persistent advantage learning alpha')
+flags.DEFINE_bool('reward_scaling', False, 'Learn reward scaling')
+flags.DEFINE_float('reward_scaling_beta', 1e-4,
+                   'Reward scaling exponential moving average coefficient')
+flags.DEFINE_float('reward_scaling_stddev', 1,
+                   'Reward scaling standard deviation')
 flags.DEFINE_integer('train_period', 4,
                      'The number of steps between training updates')
 flags.DEFINE_integer(
@@ -82,7 +87,8 @@ flags.DEFINE_integer(
     'final_exploration_frame', 1000000,
     'The number of frames over to anneal epsilon to its final value')
 flags.DEFINE_float('reward_clipping', 1.0,
-                   'Range around zero to limit rewards to. 0 to disable')
+                   'Range around zero to limit rewards to. 0 to disable. '
+                   'Disabled if reward_scaling is True')
 flags.DEFINE_float('loss_clipping', 1.0,
                    'Range around zero to limit loss to. 0 to disable')
 flags.DEFINE_float('grad_clipping', 10.0,

@@ -6,19 +6,19 @@ from .dqn import TargetNetwork
 
 
 class ConstraintNetwork(object):
-  def __init__(self, policy_network, config):
+  def __init__(self, policy_network, reward_scaling, config):
     self.policy_network = policy_network
     self.constraint_steps = config.optimality_tightening_steps
 
-    lower_bound = self.build_lower_bound(policy_network, config)
-    lower_bound_difference = (
-        lower_bound - policy_network.heads_taken_action_value)
+    lower_bound = self.build_lower_bound(policy_network, reward_scaling,
+                                         config)
+    lower_bound_difference = (lower_bound - policy_network.taken_action_values)
     lower_bound_breached = tf.to_float(lower_bound_difference > 0)
     lower_bound_penalty = tf.square(tf.nn.relu(lower_bound_difference))
 
-    upper_bound = self.build_upper_bound(policy_network, config)
-    upper_bound_difference = (
-        policy_network.heads_taken_action_value - upper_bound)
+    upper_bound = self.build_upper_bound(policy_network, reward_scaling,
+                                         config)
+    upper_bound_difference = (policy_network.taken_action_values - upper_bound)
     upper_bound_breached = tf.to_float(upper_bound_difference > 0)
     upper_bound_penalty = tf.square(tf.nn.relu(upper_bound_difference))
 
@@ -28,7 +28,7 @@ class ConstraintNetwork(object):
     self.error_rescaling = 1.0 / (
         1.0 + constraint_breaches * config.optimality_penalty_ratio)
 
-  def build_upper_bound(self, policy_network, config):
+  def build_upper_bound(self, policy_network, reward_scaling, config):
     # Input frames
     self.past_input_frames = tf.placeholder(
         tf.float32, [None, self.constraint_steps, config.input_frames
@@ -67,6 +67,7 @@ class ConstraintNetwork(object):
 
       past_network = TargetNetwork(
           policy_network,
+          reward_scaling,
           config,
           reuse=True,
           input_frames=past_input_frame,
@@ -74,7 +75,7 @@ class ConstraintNetwork(object):
 
       past_reward = tf.expand_dims(past_reward, axis=1)
       upper_bound = (
-          past_discount * past_network.heads_taken_action_value - past_reward)
+          past_discount * past_network.taken_action_values - past_reward)
 
       # Ignore upper bound if game hasn't started yet
       upper_bound = tf.select(past_alive, upper_bound,
@@ -83,10 +84,10 @@ class ConstraintNetwork(object):
       upper_bounds.append(upper_bound)
 
     # Return the minimum upper bound
-    upper_bounds = tf.pack(upper_bounds, axis=1)
-    return tf.reduce_min(upper_bounds, axis=1, name='upper_bound')
+    upper_bounds = tf.stack(upper_bounds, axis=2)
+    return tf.reduce_min(upper_bounds, axis=2, name='upper_bound')
 
-  def build_lower_bound(self, policy_network, config):
+  def build_lower_bound(self, policy_network, reward_scaling, config):
     # Input frames
     self.future_input_frames = tf.placeholder(
         tf.float32, [None, self.constraint_steps, config.input_frames
@@ -125,11 +126,14 @@ class ConstraintNetwork(object):
         future_input_frames, future_rewards, future_alives, future_discounts):
 
       future_network = TargetNetwork(
-          policy_network, config, reuse=True, input_frames=future_input_frame)
+          policy_network,
+          reward_scaling,
+          config,
+          reuse=True,
+          input_frames=future_input_frame)
 
       future_reward = tf.expand_dims(future_reward, axis=1)
-      lower_bound = (
-          future_reward + future_discount * future_network.heads_max_value)
+      lower_bound = (future_reward + future_discount * future_network.values)
 
       # Ignore lower bound if game is finished
       lower_bound = tf.select(future_alive, lower_bound,
@@ -143,7 +147,7 @@ class ConstraintNetwork(object):
         tf.expand_dims(
             self.total_rewards, axis=1),
         multiples=[1, policy_network.num_heads])
-    lower_bounds = tf.pack(lower_bounds + [total_rewards], axis=1)
+    lower_bounds = tf.stack(lower_bounds + [total_rewards], axis=2)
 
     # Return the maximum lower bound
-    return tf.reduce_max(lower_bounds, axis=1, name='lower_bound')
+    return tf.reduce_max(lower_bounds, axis=2, name='lower_bound')

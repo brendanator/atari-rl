@@ -8,25 +8,27 @@ from . import util
 class QNetwork(object):
   def __init__(self,
                scope,
-               reuse,
+               reward_scaling,
                config,
+               reuse=None,
                input_frames=None,
-               action_input=None,
-               bootstrap_mask=None):
+               action_input=None):
 
     self.scope = scope
+    self.num_heads = config.num_bootstrap_heads if config.bootstrapped else 1
+    self.using_ensemble = config.bootstrap_use_ensemble
 
     with tf.variable_scope(scope, reuse=reuse):
-      input_frames, action_input, bootstrap_mask = self.build_inputs(
-          input_frames, action_input, bootstrap_mask, config)
+      input_frames, action_input = self.build_inputs(input_frames,
+                                                     action_input, config)
 
       conv_output = self.build_conv_layers(input_frames, config)
 
-      self.build_heads(conv_output, config)
+      self.build_heads(conv_output, reward_scaling, config)
 
       self.sample_head()
 
-  def build_inputs(self, input_frames, action_input, bootstrap_mask, config):
+  def build_inputs(self, input_frames, action_input, config):
     with tf.variable_scope('input'):
       # Input frames
       if input_frames is None:
@@ -44,19 +46,7 @@ class QNetwork(object):
       else:
         self.action_input = action_input
 
-      # Bootstrap mask
-      self.num_heads = config.num_bootstrap_heads if config.bootstrapped else 1
-      self.using_ensemble = config.bootstrap_use_ensemble
-      if bootstrap_mask is None:
-        if self.num_heads > 1 and config.bootstrap_mask_probability < 1:
-          self.bootstrap_mask = tf.placeholder(
-              tf.float32, [None, self.num_heads], name='bootstrap_mask')
-        else:
-          self.bootstrap_mask = None
-      else:
-        self.bootstrap_mask = bootstrap_mask
-
-    return nhwc_input_frames, action_input, bootstrap_mask
+    return nhwc_input_frames, action_input
 
   def build_conv_layers(self, input_frames, config):
     with tf.variable_scope('conv1'):
@@ -76,46 +66,33 @@ class QNetwork(object):
 
     return conv_output
 
-  def build_heads(self, conv_output, config):
-    if self.num_heads > 1:
-      self.heads = [
-          OutputHead(conv_output, self.action_input, 'head-%d' % i, config)
-          for i in range(self.num_heads)
-      ]
+  def build_heads(self, conv_output, reward_scaling, config):
+    self.heads = [
+        ActionValueHead('head-%d' % i, conv_output, reward_scaling, config)
+        for i in range(self.num_heads)
+    ]
 
-      heads_action_values = tf.pack(
-          [head.action_values for head in self.heads], axis=1)
-      self.heads_action_values = self.apply_bootstrap_mask(heads_action_values)
+    self.action_values = tf.stack(
+        [head.action_value for head in self.heads], axis=1)
 
-      heads_taken_action_value = tf.pack(
-          [head.taken_action_value for head in self.heads], axis=1)
-      self.heads_taken_action_value = self.apply_bootstrap_mask(
-          heads_taken_action_value)
+    action_input = tf.expand_dims(self.action_input, axis=1)
+    self.taken_action_values = tf.reduce_sum(
+        self.action_values * tf.one_hot(action_input, config.num_actions),
+        axis=2,
+        name='taken_action_values')
 
-      heads_max_action = tf.pack(
-          [head.max_action for head in self.heads], axis=1)
-      self.heads_max_action = self.apply_bootstrap_mask(heads_max_action)
+    values, max_actions = tf.nn.top_k(self.action_values, k=1)
+    self.values = tf.squeeze(values, axis=2, name='values')
+    self.max_actions = tf.squeeze(max_actions, axis=2, name='max_actions')
 
-      if self.using_ensemble:
-        ensemble_votes = tf.reduce_sum(
-            tf.one_hot(heads_max_action, config.num_actions), axis=1)
-        # Add some noise to break ties
-        noise = tf.random_uniform([config.num_actions])
-        _, ensemble_max_action = tf.nn.top_k(ensemble_votes + noise, k=1)
-        self.ensemble_max_action = tf.squeeze(
-            ensemble_max_action, axis=1, name='ensemble_max_action')
-    else:
-      head = OutputHead(conv_output, self.action_input, 'output', config)
-      self.heads = [head]
-      self.heads_action_values = head.action_values
-      self.heads_taken_action_value = head.taken_action_value
-      self.heads_max_action = head.max_action
-
-  def apply_bootstrap_mask(self, inputs):
-    if self.bootstrap_mask:
-      return inputs * self.bootstrap_mask
-    else:
-      return inputs
+    if self.using_ensemble:
+      ensemble_votes = tf.reduce_sum(
+          tf.one_hot(self.max_actions, config.num_actions), axis=1)
+      # Add some noise to break ties
+      noise = tf.random_uniform([config.num_actions])
+      _, ensemble_max_action = tf.nn.top_k(ensemble_votes + noise, k=1)
+      self.ensemble_max_action = tf.squeeze(
+          ensemble_max_action, axis=1, name='ensemble_max_action')
 
   def sample_head(self):
     self.active_head = self.heads[np.random.randint(self.num_heads)]
@@ -127,35 +104,37 @@ class QNetwork(object):
     else:
       return self.ensemble_max_action
 
+  @property
   def variables(self):
     return tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope)
 
   def copy_to_network(self, to_network):
-    """Copy the tensor variables with the same names between the two scopes"""
+    """Copy the tensor variables values between the two scopes"""
 
     operations = []
 
-    for from_var, to_var in zip(self.variables(), to_network.variables()):
+    for from_var, to_var in zip(self.variables, to_network.variables):
       operations.append(to_var.assign(from_var).op)
 
     with tf.control_dependencies(operations):
       return tf.no_op(name='copy_q_network')
 
 
-class OutputHead(object):
-  def __init__(self, inputs, action_input, name, config):
+class ActionValueHead(object):
+  def __init__(self, name, inputs, reward_scaling, config):
     with tf.variable_scope(name):
-      self.action_values = self.action_values_layer(inputs, config)
+      action_value = self.action_value_layer(inputs, config)
 
-      self.taken_action_value = tf.reduce_sum(
-          self.action_values * tf.one_hot(action_input, config.num_actions),
-          axis=1)
+      if reward_scaling:
+        action_value = reward_scaling.unnormalize_output(action_value)
 
-      max_values, max_actions = tf.nn.top_k(self.action_values, k=1)
-      self.max_value = tf.squeeze(max_values, axis=1, name='max_value')
-      self.max_action = tf.squeeze(max_actions, axis=1, name='max_action')
+      self.action_value = tf.identity(action_value, name='action_value')
 
-  def action_values_layer(self, inputs, config):
+      value, max_action = tf.nn.top_k(self.action_value, k=1)
+      self.value = tf.squeeze(value, axis=1, name='value')
+      self.max_action = tf.squeeze(max_action, axis=1, name='max_action')
+
+  def action_value_layer(self, inputs, config):
     if config.dueling:
       hidden_value = util.fully_connected(
           inputs, 512, activation_fn=tf.nn.relu, name='hidden_value')
@@ -170,56 +149,54 @@ class OutputHead(object):
           activation_fn=tf.nn.relu,
           name='actions')
 
-      return tf.identity(
-          value + actions - tf.reduce_mean(
-              actions, axis=1, keep_dims=True),
-          name='action_values')
+      return value + actions - tf.reduce_mean(actions, axis=1, keep_dims=True)
 
     else:
       hidden = util.fully_connected(
           inputs, 512, activation_fn=tf.nn.relu, name='hidden')
 
       return util.fully_connected(
-          hidden, config.num_actions, activation_fn=None, name='action_values')
+          hidden, config.num_actions, activation_fn=None, name='action_value')
 
 
 class PolicyNetwork(QNetwork):
-  def __init__(self, config, reuse=None, input_frames=None):
-    super(PolicyNetwork, self).__init__('policy', reuse, config, input_frames)
+  def __init__(self, reward_scaling, config):
+    super(PolicyNetwork, self).__init__('policy', reward_scaling, config)
 
 
 class TargetNetwork(QNetwork):
   def __init__(self,
                policy_network,
+               reward_scaling,
                config,
                reuse=None,
                input_frames=None,
                action_input=None):
     self.config = config
-    super(TargetNetwork, self).__init__('target', reuse, config, input_frames,
-                                        action_input,
-                                        policy_network.bootstrap_mask)
+    super(TargetNetwork, self).__init__(
+        scope='target',
+        reward_scaling=reward_scaling,
+        config=config,
+        reuse=reuse,
+        input_frames=input_frames,
+        action_input=action_input)
 
     if config.double_q:
       with tf.variable_scope('double_q'):
-        self.heads_max_action = tf.identity(
-            policy_network.heads_max_action, name='heads_max_action')
+        # Policy network shouldn't be updated when calculating target values
+        self.max_actions = tf.stop_gradient(
+            policy_network.max_actions, name='max_actions')
 
-        self.heads_max_value = tf.reduce_sum(
-            tf.one_hot(self.heads_max_action, config.num_actions) *
-            self.heads_action_values,
+        self.values = tf.reduce_sum(
+            tf.one_hot(self.max_actions, config.num_actions) *
+            self.action_values,
             axis=2,
-            name='heads_max_value')
-    else:
-      self.heads_max_value = tf.pack(
-          [head.max_value for head in self.heads],
-          axis=1,
-          name='heads_max_value')
+            name='values')
 
     self.reward_input = tf.placeholder(tf.float32, [None], name='reward')
     self.alive_input = tf.placeholder(tf.float32, [None], name='alive')
     reward_input = tf.expand_dims(self.reward_input, axis=1)
     alive_input = tf.expand_dims(self.alive_input, axis=1)
 
-    self.heads_target_action_value = reward_input + (
-        alive_input * config.discount_rate * self.heads_max_value)
+    self.target_action_values = reward_input + (
+        alive_input * config.discount_rate * self.values)
