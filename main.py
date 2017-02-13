@@ -20,8 +20,9 @@ flags.DEFINE_float(
     'Probability of ignoring the agent action and repeat last action')
 flags.DEFINE_string('input_shape', '[84, 84]', 'Rescale input to this shape')
 flags.DEFINE_integer('input_frames', 4, 'Number of frames to input')
-flags.DEFINE_integer('random_reset_actions', 30,
-                     'Number of random actions to perform at start of episode')
+flags.DEFINE_integer(
+    'max_noops', 30,
+    'Maximum number of noop actions to perform at start of episode')
 
 # Agent
 flags.DEFINE_bool('double_q', False, 'Whether to use Double Q-Learning')

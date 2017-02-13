@@ -6,7 +6,7 @@ Learning to play Atari in TensorFlow using Deep Reinforcement Learning
 
 ## Requirements
 
-- Python 2/3 - mainly tested with python3
+- Python 2/3
 - [OpenAI Gym](https://gym.openai.com) with the [Arcade Learning Environment](https://github.com/mgbellemare/Arcade-Learning-Environment)
 - [TensorFlow 0.12.0](https://www.tensorflow.org)
 

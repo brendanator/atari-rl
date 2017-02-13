@@ -1,3 +1,4 @@
+import numpy as np
 import re
 
 from gym.envs.atari.atari_env import AtariEnv
@@ -18,12 +19,12 @@ class Atari(object):
         repeat_action_probability=config.repeat_action_probability)
 
     if isinstance(config.frameskip, int):
-      self.average_frameskip = config.frameskip
+      frameskip = config.frameskip
     else:
-      minimum, maximum = config.frameskip
-      self.average_frameskip = (minimum + maximum) / 2.0
+      frameskip = config.frameskip[1]
 
-    self.random_reset_actions = config.random_reset_actions
+    self.input_frames = config.input_frames
+    self.max_noops = config.max_noops / frameskip
     self.render = config.render
 
     config.num_actions = self.env.action_space.n
@@ -39,8 +40,8 @@ class Atari(object):
     self.frames = [frame]
     reward = 0
 
-    for i in range(int(self.random_reset_actions / self.average_frameskip)):
-      frame, reward_, done, _ = self.env.step(self.sample_action())
+    for i in range(np.random.randint(self.input_frames, self.max_noops + 1)):
+      frame, reward_, done, _ = self.env.step(0)
       if self.render: env.render()
 
       self.frames.append(frame)
