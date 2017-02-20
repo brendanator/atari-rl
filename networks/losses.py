@@ -9,22 +9,22 @@ class Losses(object):
 
   def build_loss(self, config):
     # TD-error
-    td_errors = self.td_error()
-    square_errors = tf.square(td_errors)
+    td_error = self.td_error()
+    square_error = tf.square(td_error)
 
     # Optimality Tightening
     if config.optimality_tightening:
       penalty, error_rescaling = self.optimality_tightening()
-      square_errors = (square_errors + penalty) / error_rescaling
+      square_error = (square_error + penalty) / error_rescaling
 
     # Apply bootstrap mask
     if config.bootstrapped and config.bootstrap_mask_probability < 1.0:
-      td_errors *= self.bootstrap_mask
-      square_errors *= self.bootstrap_mask
+      td_error *= self.bootstrap_mask
+      square_error *= self.bootstrap_mask
 
     # Sum bootstrap heads
-    self.td_errors = tf.reduce_sum(td_errors, axis=1, name='td_errors')
-    square_error = tf.reduce_sum(square_errors, axis=1, name='square_error')
+    self.td_error = tf.reduce_sum(td_error, axis=1, name='td_error')
+    square_error = tf.reduce_sum(square_error, axis=1, name='square_error')
 
     # Apply importance sampling
     self.loss = tf.reduce_mean(
@@ -42,7 +42,7 @@ class Losses(object):
 
   def td_error(self, t=0):
     target_value = self.target_value(t)
-    taken_action_value = self.policy_network[t].action_value(self.action[t])
+    taken_action_value = self.policy_network[t].taken_action_value
     return target_value - taken_action_value
 
   def target_value(self, t=0):
@@ -50,12 +50,12 @@ class Losses(object):
 
   def value(self, t):
     if self.config.double_q:
-      greedy_action = self.policy_network[t].greedy_actions
+      greedy_action = self.policy_network[t].greedy_action
       return self.target_network[t].action_value(greedy_action)
     elif self.config.sarsa:
       return self.target_network[t].taken_action_value
     else:
-      return self.target_network[t].values
+      return self.target_network[t].value
 
   def persistent_advantage_target(self, t):
     q_target = self.target_value(t)
@@ -80,7 +80,7 @@ class Losses(object):
     upper_bound = tf.reduce_min(tf.stack(upper_bounds, axis=2), axis=2)
 
     upper_bound_difference = (
-        self.policy_network[0].taken_action_values - upper_bound)
+        self.policy_network[0].taken_action_value - upper_bound)
     upper_bound_breached = tf.to_float(upper_bound_difference > 0)
     upper_bound_penalty = tf.square(tf.nn.relu(upper_bound_difference))
 
@@ -94,7 +94,7 @@ class Losses(object):
     lower_bound = tf.reduce_max(tf.stack(lower_bounds, axis=2), axis=2)
 
     lower_bound_difference = (
-        lower_bound - self.policy_network[t].taken_action_values)
+        lower_bound - self.policy_network[t].taken_action_value)
     lower_bound_breached = tf.to_float(lower_bound_difference > 0)
     lower_bound_penalty = tf.square(tf.nn.relu(lower_bound_difference))
 
@@ -112,7 +112,7 @@ class Losses(object):
     reward = self.policy_net.value(t + n)
     for i in range(n - 1, -1, -1):
       reward = reward * discount_rate + Reward(t + i)
-      value = self.policy_net.values(t + i)
+      value = self.policy_net.value(t + i)
       td_error = reward - value
 
       log_policy = self.policy_net.log_policy(t + 1)

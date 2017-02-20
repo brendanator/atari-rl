@@ -93,7 +93,7 @@ class SynchronousTrainer(object):
       # Create training op
       minimize = opt.apply_gradients(grads, global_step=self.global_step)
       with tf.control_dependencies([minimize]):
-        self.train_op = self.losses.td_errors
+        self.train_op = self.losses.td_error
 
     # Add histograms for trainable variables.
     for var in tf.trainable_variables():

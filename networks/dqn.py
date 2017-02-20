@@ -62,8 +62,8 @@ class QNetwork(object):
       head = ActorCriticHead('actor-critic', conv_output, reward_scaling,
                              config)
       self.heads = [head]
-      self.values = head.value
-      self.greedy_actions = head.greedy_action
+      self.value = head.value
+      self.greedy_action = head.greedy_action
     else:
       self.heads = [
           ActionValueHead('head-%d' % i, conv_output, reward_scaling, config)
@@ -71,20 +71,20 @@ class QNetwork(object):
       ]
 
       self.action_values = tf.stack(
-          [head.action_value for head in self.heads], axis=1)
+          [head.action_values for head in self.heads], axis=1)
 
       action_input = tf.expand_dims(action_input, axis=1)
-      self.taken_action_values = self.action_value(
+      self.taken_action_value = self.action_value(
           action_input, name='taken_action_values')
 
-      values, greedy_actions = tf.nn.top_k(self.action_values, k=1)
-      self.values = tf.squeeze(values, axis=2, name='values')
-      self.greedy_actions = tf.squeeze(
-          greedy_actions, axis=2, name='greedy_actions')
+      value, greedy_action = tf.nn.top_k(self.action_values, k=1)
+      self.value = tf.squeeze(value, axis=2, name='values')
+      self.greedy_action = tf.squeeze(
+          greedy_action, axis=2, name='greedy_actions')
 
       if self.using_ensemble:
         ensemble_votes = tf.reduce_sum(
-            tf.one_hot(self.greedy_actions, config.num_actions), axis=1)
+            tf.one_hot(self.greedy_action, config.num_actions), axis=1)
         # Add some noise to break ties
         noise = tf.random_uniform([config.num_actions])
         _, ensemble_greedy_action = tf.nn.top_k(ensemble_votes + noise, k=1)
@@ -126,14 +126,14 @@ class QNetwork(object):
 class ActionValueHead(object):
   def __init__(self, name, inputs, reward_scaling, config):
     with tf.variable_scope(name):
-      action_value = self.action_value_layer(inputs, config)
+      action_values = self.action_value_layer(inputs, config)
 
       if reward_scaling:
-        action_value = reward_scaling.unnormalize_output(action_value)
+        action_values = reward_scaling.unnormalize_output(action_value)
 
-      self.action_value = tf.identity(action_value, name='action_value')
+      self.action_values = tf.identity(action_values, name='action_value')
 
-      value, greedy_action = tf.nn.top_k(self.action_value, k=1)
+      value, greedy_action = tf.nn.top_k(self.action_values, k=1)
       self.value = tf.squeeze(value, axis=1, name='value')
       self.greedy_action = tf.squeeze(
           greedy_action, axis=1, name='greedy_action')
