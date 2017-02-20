@@ -7,11 +7,10 @@ import util
 
 class QNetwork(object):
   def __init__(self, scope, inputs, reward_scaling, config, reuse):
-
     self.scope = scope
-    self.num_heads = config.num_bootstrap_heads if config.bootstrapped else 1
-    self.using_ensemble = config.bootstrap_use_ensemble
     self.config = config
+    self.num_heads = config.num_bootstrap_heads
+    self.using_ensemble = config.bootstrap_use_ensemble
 
     with tf.variable_scope(scope, reuse=reuse):
       self.conv_layers = self.build_conv_layers(inputs.input_frames, config)
@@ -136,7 +135,8 @@ class ActionValueHead(object):
 
       value, greedy_action = tf.nn.top_k(self.action_value, k=1)
       self.value = tf.squeeze(value, axis=1, name='value')
-      self.greedy_action = tf.squeeze(greedy_action, axis=1, name='greedy_action')
+      self.greedy_action = tf.squeeze(
+          greedy_action, axis=1, name='greedy_action')
 
   def action_value_layer(self, inputs, config):
     if config.dueling:

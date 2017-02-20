@@ -66,8 +66,8 @@ class ReplayMemory(object):
       for index, error in zip(indices, errors):
         self.priorities.update(index, error)
 
-  def sample_batch(self, batch_size, step=0):
-    return SampleBatch(self, self.sample_indices(batch_size))
+  def sample_batch(self, batch_size, step):
+    return SampleBatch(self, self.sample_indices(batch_size), step)
     # indices = self.sample_indices(batch_size)
 
     # observations = self.observations[indices]
@@ -135,6 +135,7 @@ class ReplayMemory(object):
     return available
 
   def valid_index(self, index):
+    # TODO Get range from NetworkInputs
     # Don't return states that may have incomplete constraint data
     offset = self.constraint_steps + 1
     if self.sarsa: offset += 1
@@ -146,10 +147,12 @@ class ReplayMemory(object):
 
 
 class SampleBatch(object):
-  def __init__(self, replay_memory, indices):
+  def __init__(self, replay_memory, indices, step):
     self.replay_memory = replay_memory
     self.indices = indices
+    self.step = step
 
+  # TODO Merge this stuff into inputs?
   def offset_indices(self, offset, offset_end):
     if not offset:
       offsets = 0
@@ -178,16 +181,14 @@ class SampleBatch(object):
     indices = self.offset_indices(offset, offset_end)
     return self.replay_memory.alives[indices]
 
-  def error_weights(self, offset=None, offset_end=None):
-    # TODO What to do??
-    # if self.prioritized:
-    #   error_weights = self.priorities.error_weights(indices, self.count, step)
-    # else:
-    #   error_weights = np.ones_like(indices)
+  def total_rewards(self, offset=None, offset_end=None):
+    indices = self.offset_indices(offset, offset_end)
+    return self.replay_memory.total_rewards[indices]
+
+  def importance_sampling(self):
     if self.replay_memory.prioritized:
-      indices = self.offset_indices(offset, offset_end)
-      return self.replay_memory.priorities.error_weights(
-          indices, self.replay_memory.count, step)
+      return self.replay_memory.priorities.importance_sampling(
+          self.indices, self.replay_memory.count, self.step)
     else:
       return np.ones_like(self.indices)
 

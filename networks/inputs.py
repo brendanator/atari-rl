@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 
-class Inputs(object):
+class NetworkInputs(object):
   def __init__(self, t, config):
     self.t = t
 
@@ -19,6 +19,10 @@ class Inputs(object):
       self.alive_input = tf.placeholder(tf.float32, [None], name='alive')
       self.alive_input.feed_data = self.batch_alives
 
+      self.total_reward_input = tf.placeholder(
+          tf.float32, [None], name='total_reward')
+      self.total_reward_input.feed_data = self.batch_total_rewards
+
   def batch_frames(self, batch):
     return batch.observations(self.t)
 
@@ -30,3 +34,25 @@ class Inputs(object):
 
   def batch_alives(self, batch):
     return batch.alives(self.t)
+
+  def batch_total_rewards(self, batch):
+    return batch.total_rewards(self.t)
+
+
+class GlobalInputs(object):
+  def __init__(self, config):
+    with tf.variable_scope('global_inputs'):
+      self.bootstrap_mask = tf.placeholder(
+          tf.float32, [None, config.num_bootstrap_heads],
+          name='bootstrap_mask')
+      self.bootstrap_mask.feed_data = self.batch_bootstrap_mask
+
+      self.importance_sampling = tf.placeholder(tf.float32, [None],
+                                                'importance_sampling')
+      self.importance_sampling.feed_data = self.batch_importance_sampling
+
+  def batch_bootstrap_mask(self, batch):
+    return batch.bootstrap_mask()
+
+  def batch_importance_sampling(self, batch):
+    return batch.importance_sampling()

@@ -5,13 +5,14 @@ class NetworkFactory(object):
   def __init__(self, reward_scaling, config):
     self.reward_scaling = reward_scaling
     self.config = config
+    self.global_inputs = inputs.GlobalInputs(config)
     self.network_inputs = {}
     self.policy_nets = {}
     self.target_nets = {}
 
   def inputs(self, t):
     if t not in self.network_inputs:
-      self.network_inputs[t] = inputs.Inputs(t, self.config)
+      self.network_inputs[t] = inputs.NetworkInputs(t, self.config)
 
     return self.network_inputs[t]
 

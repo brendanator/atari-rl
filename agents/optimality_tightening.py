@@ -146,7 +146,7 @@ class ConstraintNetwork(object):
     total_rewards = tf.tile(
         tf.expand_dims(
             self.total_rewards, axis=1),
-        multiples=[1, policy_network.num_heads])
+        multiples=[1, config.num_bootstrap_heads])
     lower_bounds = tf.stack(lower_bounds + [total_rewards], axis=2)
 
     # Return the maximum lower bound

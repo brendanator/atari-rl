@@ -108,6 +108,7 @@ def main(_):
   # TODO Is this correct here?
   config.reward_clipping = config.reward_clipping and not config.reward_scaling
   config.num_actions = atari.Atari.num_actions(config)
+  if not config.bootstrapped: config.num_boostrap_heads = 1
   config.actor_critic = config.async == 'a3c'
 
   util.log('Loading trainer')

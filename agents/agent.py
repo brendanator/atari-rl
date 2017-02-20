@@ -51,7 +51,7 @@ class Agent(object):
     if np.random.rand() < self.epsilon(step):
       return self.atari.sample_action()
     else:
-      return session.run(self.policy_network.max_action,
+      return session.run(self.policy_network.choose_action,
                          {self.policy_network.input_frames: [observation]})
 
   def epsilon(self, step):
