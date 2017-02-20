@@ -152,6 +152,9 @@ class SampleBatch(object):
     self.indices = indices
     self.step = step
 
+  def __len__(self):
+    return len(self.indices)
+
   # TODO Merge this stuff into inputs?
   def offset_indices(self, offset, offset_end):
     if not offset:

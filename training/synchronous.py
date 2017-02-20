@@ -4,25 +4,18 @@ import tensorflow as tf
 import numpy as np
 
 from agents.agent import Agent
+from agents.replay_memory import ReplayMemory
 from networks import Losses, NetworkFactory
 import util
-from agents.optimality_tightening import ConstraintNetwork
-from agents.replay_memory import ReplayMemory
-from agents.reward_scaling import RewardScaling
 
 
 class SynchronousTrainer(object):
   def __init__(self, config):
     self.config = config
 
-    # Reward Scaling TODO Move into factory?
-    if config.reward_scaling:
-      self.reward_scaling = RewardScaling(config)
-    else:
-      self.reward_scaling = None
-
     # Create network factory
-    self.factory = NetworkFactory(self.reward_scaling, config)
+    self.factory = NetworkFactory(config)
+    self.reward_scaling = self.factory.reward_scaling
 
     # Create action-value network
     self.policy_network = self.factory.policy_network()
@@ -63,26 +56,14 @@ class SynchronousTrainer(object):
     # Minimize loss
     with tf.control_dependencies([loss_averages_op]):
       # Variables to update
-      policy_variables = self.policy_network.variables
-      if self.reward_scaling:  # TODO Do something with reward_scaling
-        reward_scaling_variables = self.reward_scaling.variables
-      else:
-        reward_scaling_variables = []
+      policy_vars = self.policy_network.variables
+      reward_scaling_vars = self.reward_scaling.variables
 
       # Compute gradients
-      grads = opt.compute_gradients(
-          self.losses.loss,
-          var_list=policy_variables + reward_scaling_variables)
+      grads = opt.compute_gradients(self.losses.loss, var_list=policy_vars+reward_scaling_vars)
 
       # Apply normalized SGD for reward scaling
-      if self.reward_scaling:
-        grads_ = []
-        for grad, var in grads:
-          if grad is not None:
-            if var in policy_variables:
-              grad /= self.reward_scaling.sigma_squared_input
-            grads_.append((grad, var))
-        grads = grads_
+      grads = self.reward_scaling.scale_gradients(grads, policy_vars)
 
       # Clip gradients
       if self.config.grad_clipping:

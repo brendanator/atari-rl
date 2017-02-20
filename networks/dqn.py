@@ -9,13 +9,13 @@ class QNetwork(object):
   def __init__(self, scope, inputs, reward_scaling, config, reuse):
     self.scope = scope
     self.config = config
+    self.reward_scaling = reward_scaling
     self.num_heads = config.num_bootstrap_heads
     self.using_ensemble = config.bootstrap_use_ensemble
 
     with tf.variable_scope(scope, reuse=reuse):
       self.conv_layers = self.build_conv_layers(inputs.input_frames, config)
-      self.build_heads(self.conv_layers, inputs.action_input, reward_scaling,
-                       config)
+      self.build_heads(self.conv_layers, inputs.action_input, config)
 
     self.sample_head()
 
@@ -57,16 +57,16 @@ class QNetwork(object):
 
     return conv_output
 
-  def build_heads(self, conv_output, action_input, reward_scaling, config):
+  def build_heads(self, conv_output, action_input, config):
     if config.actor_critic:
-      head = ActorCriticHead('actor-critic', conv_output, reward_scaling,
+      head = ActorCriticHead('actor-critic', conv_output, self.reward_scaling,
                              config)
       self.heads = [head]
       self.value = head.value
       self.greedy_action = head.greedy_action
     else:
       self.heads = [
-          ActionValueHead('head-%d' % i, conv_output, reward_scaling, config)
+          ActionValueHead('head-%d' % i, conv_output, self.reward_scaling, config)
           for i in range(self.num_heads)
       ]
 
@@ -127,11 +127,8 @@ class ActionValueHead(object):
   def __init__(self, name, inputs, reward_scaling, config):
     with tf.variable_scope(name):
       action_values = self.action_value_layer(inputs, config)
-
-      if reward_scaling:
-        action_values = reward_scaling.unnormalize_output(action_value)
-
-      self.action_values = tf.identity(action_values, name='action_value')
+      action_values = reward_scaling.unnormalize_output(action_values)
+      self.action_values = tf.identity(action_values, name='action_values')
 
       value, greedy_action = tf.nn.top_k(self.action_values, k=1)
       self.value = tf.squeeze(value, axis=1, name='value')
@@ -169,10 +166,9 @@ class ActorCriticHead(object):
       hidden = util.fully_connected(
           inputs, 256, activation_fn=tf.nn.relu, name='hidden')
 
-      self.value = util.fully_connected(
+      value = util.fully_connected(
           hidden, 1, activation_fn=None, name='value')
-      if reward_scaling:
-        self.value = reward_scaling.unnormalize_output(self.value)
+      self.value = reward_scaling.unnormalize_output(value)
 
       actions = util.fully_connected(
           hidden, config.num_actions, activation_fn=None, name='actions')
@@ -193,41 +189,3 @@ class TargetNetwork(QNetwork):
   def __init__(self, inputs, reward_scaling, config, reuse):
     super(TargetNetwork, self).__init__('target', inputs, reward_scaling,
                                         config, reuse)
-
-
-# class PolicyNetwork(QNetwork):
-#   def __init__(self, reward_scaling, config, reuse=None):
-#     super(PolicyNetwork, self).__init__(
-#         'policy', reward_scaling, config, reuse=reuse)
-
-# class TargetNetwork(QNetwork):
-#   def __init__(self,
-#                policy_network,
-#                reward_scaling,
-#                config,
-#                reuse=None,
-#                input_frames=None,
-#                action_input=None):
-#     self.config = config
-#     super(TargetNetwork, self).__init__(
-#         scope='target',
-#         reward_scaling=reward_scaling,
-#         config=config,
-#         reuse=reuse,
-#         input_frames=input_frames,
-#         action_input=action_input)
-
-#     if config.double_q:
-#       with tf.variable_scope('double_q'):
-#         # Policy network shouldn't be updated when calculating target values
-#         self.max_actions = tf.stop_gradient(
-#             policy_network.max_actions, name='max_actions')
-
-#         self.values = tf.reduce_sum(
-#             tf.one_hot(self.max_actions, config.num_actions) *
-#             self.action_values,
-#             axis=2,
-#             name='values')
-#     elif config.sarsa:
-#       with tf.variable_scope('sarsa'):
-#         self.values = tf.identity(self.taken_action_values, name='values')

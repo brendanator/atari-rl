@@ -1,10 +1,13 @@
 from . import dqn, inputs
-
+from .reward_scaling import *
 
 class NetworkFactory(object):
-  def __init__(self, reward_scaling, config):
-    self.reward_scaling = reward_scaling
+  def __init__(self, config):
     self.config = config
+    if config.reward_scaling:
+      self.reward_scaling = RewardScaling(config)
+    else:
+      self.reward_scaling = DisabledRewardScaling()
     self.global_inputs = inputs.GlobalInputs(config)
     self.network_inputs = {}
     self.policy_nets = {}

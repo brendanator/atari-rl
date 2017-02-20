@@ -111,7 +111,7 @@ def main(_):
   if not config.bootstrapped: config.num_boostrap_heads = 1
   config.actor_critic = config.async == 'a3c'
 
-  util.log('Loading trainer')
+  util.log('Building network and training operations')
   if config.async:
     trainer = training.async_one_step.AsyncOneStepTrainer(config)
   else:
