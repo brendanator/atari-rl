@@ -9,6 +9,7 @@ Learning to play Atari in TensorFlow using Deep Reinforcement Learning
 - Python 2/3
 - [OpenAI Gym](https://gym.openai.com) with the [Arcade Learning Environment](https://github.com/mgbellemare/Arcade-Learning-Environment)
 - [TensorFlow 0.12.0](https://www.tensorflow.org)
+- [SkipCTS](https:/github.com/mgbellemare/SkipCTS) - `git submodule update --init`
 
 ## Usage
 

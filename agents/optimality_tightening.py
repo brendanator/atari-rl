@@ -2,7 +2,7 @@ import tensorflow as tf
 import numpy as np
 import math
 
-from .dqn import TargetNetwork
+from networks.dqn import TargetNetwork
 
 
 class ConstraintNetwork(object):

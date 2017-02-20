@@ -2,7 +2,7 @@ import math
 import numpy as np
 
 from .cts.model import CTS
-from . import util
+import util
 
 
 class ExplorationBonus(object):

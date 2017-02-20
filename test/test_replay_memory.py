@@ -5,11 +5,6 @@ import math
 from agents.replay_memory import *
 
 
-class ReplayMemoryWrapper(ReplayMemory):
-  def sample_indices(self, batch_size):
-    return np.arange(batch_size)
-
-
 class ReplayMemoryTest(tf.test.TestCase):
   def test_replay_memory(self):
     class Config(object):
@@ -25,7 +20,7 @@ class ReplayMemoryTest(tf.test.TestCase):
     config.replay_prioritized = False
     config.num_bootstrap_heads = 1
     config.bootstrap_mask_probability = 1.0
-    memory = ReplayMemoryWrapper(config)
+    memory = LinearReplayMemory(config)
 
     for i in range(10):
       memory.store(i, i, i, False)

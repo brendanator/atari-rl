@@ -1,6 +1,5 @@
 import tensorflow as tf
-
-from . import util
+import util
 
 
 class RewardScaling(object):

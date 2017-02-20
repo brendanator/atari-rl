@@ -1,11 +1,7 @@
-from datetime import datetime
-import os
-import time
-
+import atari
 import tensorflow as tf
-import numpy as np
-
-from agents.agent import Agent
+import training
+import util
 
 flags = tf.app.flags
 
@@ -25,7 +21,8 @@ flags.DEFINE_integer(
     'Maximum number of noop actions to perform at start of episode')
 
 # Agent
-flags.DEFINE_bool('double_q', False, 'Whether to use Double Q-Learning')
+flags.DEFINE_bool('double_q', False, 'Enable Double Q-Learning')
+flags.DEFINE_bool('sarsa', False, 'Enable SARSA')
 flags.DEFINE_bool('bootstrapped', False, 'Whether to use bootstrapped DQN')
 flags.DEFINE_integer('num_bootstrap_heads', 10,
                      'Number of bootstrapped head to use')
@@ -73,6 +70,10 @@ flags.DEFINE_string('exploration_image_shape', '[42, 42]',
                     'Shape of image to use with CTS in exploration bonus')
 
 # Training
+flags.DEFINE_string('async', None, 'Async algorithm [one_step|n_step|a3c]')
+flags.DEFINE_integer(
+    'num_threads', 8,
+    'Number of asynchronous actor learners to run concurrently')
 flags.DEFINE_integer('batch_size', 32, 'Batch size')
 flags.DEFINE_integer('num_steps', 50000000, 'Number of steps to train on')
 flags.DEFINE_string('train_dir', 'checkpoints',
@@ -99,74 +100,24 @@ flags.DEFINE_float('grad_clipping', 10.0,
 flags.DEFINE_bool('render', False, 'Show game during training')
 
 
-def train(config):
-  # Create agent
-  agent = Agent(config)
-
-  # Summary writer
-  checkpoint_dir = os.path.join(config.train_dir, config.game)
-  summary_writer = tf.summary.FileWriter(checkpoint_dir)
-
-  with tf.train.MonitoredTrainingSession(
-      checkpoint_dir=checkpoint_dir,
-      save_summaries_steps=0  # Summaries will be saved with train_op only
-  ) as session:
-
-    # Initialize counts
-    step, episode = 0, 0
-
-    while step < config.num_steps:
-      # Start new episode
-      start_time = time.time()
-      observation, episode_score, done = agent.new_game()
-      episode += 1
-      episode_steps = 0
-
-      # Play until losing
-      while not done:
-        # Reset target action-value network
-        if step % config.target_network_update_period == 0:
-          agent.reset_target_network(session)
-
-        # Increment counts
-        step += 1
-        episode_steps += 1
-
-        # Choose next action
-        action = agent.action(observation, step, session)
-
-        # Take action
-        observation, reward, done = agent.take_action(action)
-        episode_score += reward
-
-        # Train on random batch
-        if step % config.train_period == 0:
-          if step % config.summary_step_period == 0:
-            summary = agent.train(session, step, summary=True)
-            summary_writer.add_summary(summary, step)
-          else:
-            agent.train(session, step)
-
-      # Log episode
-      log_episode(episode, start_time, episode_score, episode_steps)
-
-
-def log_episode(episode, start_time, score, steps):
-  now = datetime.strftime(datetime.now(), '%F %X')
-  duration = time.time() - start_time
-  steps_per_sec = steps / duration
-  format_string = ('%s: Episode %d, score %.0f '
-                   '(%d steps, %.2f secs, %.2f steps/sec)')
-  print(format_string % (now, episode, score, steps, duration, steps_per_sec))
-
-
 def main(_):
   config = flags.FLAGS
   config.frameskip = eval(config.frameskip)
   config.input_shape = eval(config.input_shape)
   config.exploration_image_shape = eval(config.exploration_image_shape)
+  # TODO Is this correct here?
+  config.reward_clipping = config.reward_clipping and not config.reward_scaling
+  config.num_actions = atari.Atari.num_actions(config)
+  config.actor_critic = config.async == 'a3c'
 
-  train(config)
+  util.log('Loading trainer')
+  if config.async:
+    trainer = training.async_one_step.AsyncOneStepTrainer(config)
+  else:
+    trainer = training.synchronous.SynchronousTrainer(config)
+
+  util.log('Starting training')
+  trainer.train()
 
 
 if __name__ == '__main__':
