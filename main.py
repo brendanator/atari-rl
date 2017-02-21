@@ -1,6 +1,6 @@
+import agents.training
 import atari
 import tensorflow as tf
-import training
 import util
 
 flags = tf.app.flags
@@ -112,10 +112,7 @@ def main(_):
   config.actor_critic = config.async == 'a3c'
 
   util.log('Building network and training operations')
-  if config.async:
-    trainer = training.async_one_step.AsyncOneStepTrainer(config)
-  else:
-    trainer = training.synchronous.SynchronousTrainer(config)
+  trainer = agents.training.Trainer(config)
 
   util.log('Starting training')
   trainer.train()

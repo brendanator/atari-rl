@@ -8,47 +8,27 @@ import util
 class QNetwork(object):
   def __init__(self, scope, inputs, reward_scaling, config, reuse):
     self.scope = scope
-    self.config = config
+    self.inputs = inputs
     self.reward_scaling = reward_scaling
+    self.config = config
     self.num_heads = config.num_bootstrap_heads
     self.using_ensemble = config.bootstrap_use_ensemble
 
     with tf.variable_scope(scope, reuse=reuse):
-      self.conv_layers = self.build_conv_layers(inputs.input_frames, config)
-      self.build_heads(self.conv_layers, inputs.action_input, config)
+      self.conv_layers = self.build_conv_layers(config)
+      self.build_heads(self.conv_layers, config)
 
     self.sample_head()
 
-  def build_inputs(self, input_frames, action_input, config):
-    with tf.variable_scope('input'):
-      # Input frames
-      if input_frames is None:
-        self.input_frames = tf.placeholder(
-            tf.float32, [None, config.input_frames] + config.input_shape,
-            'input_frames')
-      else:
-        # Reuse another QNetwork's input_frames
-        self.input_frames = input_frames
-
-      # Taken actions
-      if action_input is None:
-        self.action_input = tf.placeholder(tf.int32, [None], name='action')
-      else:
-        self.action_input = action_input
-
-    return input_frames, action_input
-
-  def build_conv_layers(self, input_frames, config):
-    nhwc_input_frames = tf.transpose(input_frames, [0, 2, 3, 1])
-    with tf.variable_scope('conv1'):
-      conv1 = util.conv_layer(nhwc_input_frames, 8, 8, 4, 32)
-
-    with tf.variable_scope('conv2'):
-      conv2 = util.conv_layer(conv1, 4, 4, 2, 64)
-
-    with tf.variable_scope('conv3'):
-      conv3 = util.conv_layer(conv2, 3, 3, 1, 64)
-      conv_output = tf.reshape(conv3, [-1, 7 * 7 * 64])
+  def build_conv_layers(self, config):
+    nhwc = tf.transpose(self.inputs.frames, [0, 2, 3, 1])
+    conv1 = tf.layers.conv2d(
+        nhwc, filters=32, kernel_size=[8, 8], strides=[4, 4], name='conv1')
+    conv2 = tf.layers.conv2d(
+        conv1, filters=64, kernel_size=[4, 4], strides=[2, 2], name='conv2')
+    conv3 = tf.layers.conv2d(
+        conv2, filters=64, kernel_size=[3, 3], strides=[1, 1], name='conv3')
+    conv_output = tf.reshape(conv3, [-1, 64 * 7 * 7])
 
     # Rescale gradients entering the last convolution layer
     scale = (1.0 / math.sqrt(2) if config.dueling else 1.0) / self.num_heads
@@ -57,7 +37,7 @@ class QNetwork(object):
 
     return conv_output
 
-  def build_heads(self, conv_output, action_input, config):
+  def build_heads(self, conv_output, config):
     if config.actor_critic:
       head = ActorCriticHead('actor-critic', conv_output, self.reward_scaling,
                              config)
@@ -66,14 +46,14 @@ class QNetwork(object):
       self.greedy_action = head.greedy_action
     else:
       self.heads = [
-          ActionValueHead('head-%d' % i, conv_output, self.reward_scaling, config)
-          for i in range(self.num_heads)
+          ActionValueHead('head-%d' % i, conv_output, self.reward_scaling,
+                          config) for i in range(self.num_heads)
       ]
 
       self.action_values = tf.stack(
           [head.action_values for head in self.heads], axis=1)
 
-      action_input = tf.expand_dims(action_input, axis=1)
+      action_input = tf.expand_dims(self.inputs.action, axis=1)
       self.taken_action_value = self.action_value(
           action_input, name='taken_action_values')
 
@@ -137,41 +117,31 @@ class ActionValueHead(object):
 
   def action_value_layer(self, inputs, config):
     if config.dueling:
-      hidden_value = util.fully_connected(
-          inputs, 256, activation_fn=tf.nn.relu, name='hidden_value')
-      value = util.fully_connected(
-          hidden_value, 1, activation_fn=None, name='value')
+      hidden_value = tf.layers.dense(
+          inputs, 256, tf.nn.relu, name='hidden_value')
+      value = tf.layers.dense(hidden_value, 1, name='value')
 
-      hidden_actions = util.fully_connected(
-          inputs, 256, activation_fn=tf.nn.relu, name='hidden_actions')
-      actions = util.fully_connected(
-          hidden_actions,
-          config.num_actions,
-          activation_fn=None,
-          name='actions')
+      hidden_actions = tf.layers.dense(
+          inputs, 256, tf.nn.relu, name='hidden_actions')
+      actions = tf.layers.dense(
+          hidden_actions, config.num_actions, name='actions')
 
       return value + actions - tf.reduce_mean(actions, axis=1, keep_dims=True)
 
     else:
-      hidden = util.fully_connected(
-          inputs, 256, activation_fn=tf.nn.relu, name='hidden')
-
-      return util.fully_connected(
-          hidden, config.num_actions, activation_fn=None, name='action_value')
+      hidden = tf.layers.dense(inputs, 256, tf.nn.relu, name='hidden')
+      return tf.layers.dense(hidden, config.num_actions, name='action_value')
 
 
 class ActorCriticHead(object):
   def __init__(self, name, inputs, reward_scaling, config):
     with tf.variable_scope(name):
-      hidden = util.fully_connected(
-          inputs, 256, activation_fn=tf.nn.relu, name='hidden')
+      hidden = tf.layers.dense(inputs, 256, tf.nn.relu, name='hidden')
 
-      value = util.fully_connected(
-          hidden, 1, activation_fn=None, name='value')
+      value = tf.layers.dense(hidden, 1, name='value')
       self.value = reward_scaling.unnormalize_output(value)
 
-      actions = util.fully_connected(
-          hidden, config.num_actions, activation_fn=None, name='actions')
+      actions = tf.layers.dense(hidden, config.num_actions, name='actions')
       self.policy = tf.nn.softmax(actions, name='policy')
 
       # Sample action from policy

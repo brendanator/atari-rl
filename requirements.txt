@@ -1,2 +1,1 @@
 gym[atari]>=0.7.3
-tensorflow>=0.12.1

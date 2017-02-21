@@ -12,7 +12,6 @@ class ReplayMemory(object):
     else:
       self.constraint_steps = 0
     self.prioritized = config.replay_prioritized
-    self.sarsa = config.sarsa
 
     # Track position and count in memory
     self.cursor = 0
@@ -126,8 +125,6 @@ class ReplayMemory(object):
 
   def available(self):
     available = self.count
-    if self.sarsa:
-      available -= 1
 
     if self.constraint_steps:
       available -= 2 * self.constraint_steps - 1
@@ -138,7 +135,6 @@ class ReplayMemory(object):
     # TODO Get range from NetworkInputs
     # Don't return states that may have incomplete constraint data
     offset = self.constraint_steps + 1
-    if self.sarsa: offset += 1
 
     close_below = (index <= self.cursor) and (self.cursor <= index + offset)
     close_above = (index - offset <= self.cursor) and (self.cursor <= index)
@@ -196,6 +192,9 @@ class SampleBatch(object):
       return np.ones_like(self.indices)
 
   def build_feed_dict(self, fetches):
+    if not isinstance(fetches, list):
+      fetches = [fetches]
+
     placeholders = set()
     for fetch in fetches:
       placeholders |= self.placeholders(fetch)

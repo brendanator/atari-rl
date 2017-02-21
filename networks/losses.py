@@ -131,12 +131,12 @@ class Losses(object):
 
     self.discount = config.discount_rate
     self.reward = ArraySyntax(
-      lambda t: tf.expand_dims(factory.inputs(t).reward_input, axis=1))
+      lambda t: tf.expand_dims(factory.inputs(t).reward, axis=1))
     self.total_reward = ArraySyntax(lambda t: tf.tile(
-        tf.expand_dims(factory.inputs(t).total_reward_input, axis=1),
+        tf.expand_dims(factory.inputs(t).total_reward, axis=1),
         multiples=[1, config.num_bootstrap_heads]))
     self.action = ArraySyntax(
-      lambda t: tf.expand_dims(factory.inputs(t).action_input, axis=1))
+      lambda t: tf.expand_dims(factory.inputs(t).action, axis=1))
     self.policy_network = ArraySyntax(lambda t: factory.policy_network(t))
     self.target_network = ArraySyntax(lambda t: factory.target_network(t))
 

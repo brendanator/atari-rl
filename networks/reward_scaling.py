@@ -60,7 +60,7 @@ class RewardScaling(object):
 class DisabledRewardScaling(object):
   """An implementation that doesn't scale rewards"""
 
-  def __init__():
+  def __init__(self):
     pass
 
   def unnormalize_output(self, output):

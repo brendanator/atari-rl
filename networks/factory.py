@@ -1,6 +1,7 @@
 from . import dqn, inputs
 from .reward_scaling import *
 
+
 class NetworkFactory(object):
   def __init__(self, config):
     self.config = config
@@ -25,7 +26,7 @@ class NetworkFactory(object):
           inputs=self.inputs(t),
           reward_scaling=self.reward_scaling,
           config=self.config,
-          reuse=len(self.policy_nets))
+          reuse=len(self.policy_nets) > 0)
 
     return self.policy_nets[t]
 
@@ -35,9 +36,18 @@ class NetworkFactory(object):
           inputs=self.inputs(t),
           reward_scaling=self.reward_scaling,
           config=self.config,
-          reuse=len(self.target_nets))
+          reuse=len(self.target_nets) > 0)
 
     return self.target_nets[t]
 
-  def reset_target_network(self):
-    pass
+  def create_reset_target_network_op(self):
+    if self.target_nets:
+      policy_network = self.policy_nets.popitem()[1]
+      target_network = self.target_nets.popitem()[1]
+      self.reset_op = policy_network.copy_to_network(target_network)
+    else:
+      self.reset_op = None
+
+  def reset_target_network(self, session, step):
+    if self.reset_op and step % self.config.target_network_update_period == 0:
+      session.run(self.reset_op)

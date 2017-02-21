@@ -46,13 +46,13 @@ class Agent(object):
     self.observation = self.process_frames(frames)
     return self.observation, reward, done
 
-  def action(self, observation, step, session):
+  def action(self, session, step, observation):
     # Epsilon greedy exploration/exploitation even for bootstrapped DQN
     if np.random.rand() < self.epsilon(step):
       return self.atari.sample_action()
     else:
       return session.run(self.policy_network.choose_action,
-                         {self.policy_network.input_frames: [observation]})
+                         {self.policy_network.inputs.frames: [observation]})
 
   def epsilon(self, step):
     """Epsilon is linearly annealed from an initial exploration value

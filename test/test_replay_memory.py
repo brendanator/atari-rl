@@ -28,27 +28,27 @@ class ReplayMemoryTest(tf.test.TestCase):
     for i in range(10):
       memory.store(i, i, i, False)
 
-    episode = memory.sample_batch(11, 0)
+    batch = memory.sample_batch(11, 0)
 
     # Test near start
     i = 3
-    self.assertEqual(episode.alives[i], True)
+    self.assertEqual(batch.alives[i], True)
 
-    self.assertAllEqual(episode.past_observations[i].flatten(), [2, 1, 0, 0])
-    self.assertEqual(episode.observations[i], 3)
-    self.assertEqual(episode.next_observations[i], 4)
-    self.assertAllEqual(episode.future_observations[i].flatten(), [5, 6, 7, 8])
+    self.assertAllEqual(batch.past_observations[i].flatten(), [2, 1, 0, 0])
+    self.assertEqual(batch.observations[i], 3)
+    self.assertEqual(batch.next_observations[i], 4)
+    self.assertAllEqual(batch.future_observations[i].flatten(), [5, 6, 7, 8])
 
-    self.assertAllEqual(episode.past_actions[i].flatten(), [2, 1, 0, 0])
-    self.assertEqual(episode.actions[i], 3)
+    self.assertAllEqual(batch.past_actions[i].flatten(), [2, 1, 0, 0])
+    self.assertEqual(batch.actions[i], 3)
 
-    self.assertAllEqual(episode.past_rewards[i].flatten(), [2, 1, 0, 0])
-    self.assertEqual(episode.rewards[i], 3)
-    self.assertAllEqual(episode.future_rewards[i].flatten(), [4, 5, 6, 7])
+    self.assertAllEqual(batch.past_rewards[i].flatten(), [2, 1, 0, 0])
+    self.assertEqual(batch.rewards[i], 3)
+    self.assertAllEqual(batch.future_rewards[i].flatten(), [4, 5, 6, 7])
     total_reward = sum([
         reward * config.discount_rate**(reward - 3) for reward in range(3, 11)
     ])
-    self.assertNear(episode.total_rewards[i], total_reward, err=0.000001)
+    self.assertNear(batch.total_rewards[i], total_reward, err=0.000001)
 
   def test_proportional_priority(self):
     priority = ProportionalPriorities(11, 1, 0, 1)

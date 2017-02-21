@@ -5,23 +5,23 @@ class NetworkInputs(object):
   def __init__(self, t, config):
     self.t = t
 
-    with tf.variable_scope('time_offset_%d' % t):
+    with tf.variable_scope('input_offset_%d' % t):
       shape = [None, config.input_frames] + config.input_shape
-      self.input_frames = tf.placeholder(tf.float32, shape, 'input_frames')
-      self.input_frames.feed_data = self.batch_frames
+      self.frames = tf.placeholder(tf.float32, shape, 'frames')
+      self.frames.feed_data = self.batch_frames
 
-      self.action_input = tf.placeholder(tf.int32, [None], name='action')
-      self.action_input.feed_data = self.batch_actions
+      self.action = tf.placeholder(tf.int32, [None], name='action')
+      self.action.feed_data = self.batch_actions
 
-      self.reward_input = tf.placeholder(tf.float32, [None], name='reward')
-      self.reward_input.feed_data = self.batch_rewards
+      self.reward = tf.placeholder(tf.float32, [None], name='reward')
+      self.reward.feed_data = self.batch_rewards
 
-      self.alive_input = tf.placeholder(tf.float32, [None], name='alive')
-      self.alive_input.feed_data = self.batch_alives
+      self.alive = tf.placeholder(tf.float32, [None], name='alive')
+      self.alivefeed_data = self.batch_alives
 
-      self.total_reward_input = tf.placeholder(
+      self.total_reward = tf.placeholder(
           tf.float32, [None], name='total_reward')
-      self.total_reward_input.feed_data = self.batch_total_rewards
+      self.total_reward.feed_data = self.batch_total_rewards
 
   def batch_frames(self, batch):
     return batch.observations(self.t)
