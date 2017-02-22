@@ -17,7 +17,7 @@ class NetworkInputs(object):
       self.reward.feed_data = self.batch_rewards
 
       self.alive = tf.placeholder(tf.float32, [None], name='alive')
-      self.alivefeed_data = self.batch_alives
+      self.alive.feed_data = self.batch_alives
 
       self.total_reward = tf.placeholder(
           tf.float32, [None], name='total_reward')

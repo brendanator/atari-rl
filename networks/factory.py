@@ -45,7 +45,9 @@ class NetworkFactory(object):
   def create_agents(self):
     agents = []
     for _ in range(self.config.num_threads):
-      memory = ReplayMemory(self.config)
+      pre_offset = min(self.network_inputs.keys())
+      post_offset = max(self.network_inputs.keys())
+      memory = ReplayMemory(pre_offset, post_offset, self.config)
       agent = Agent(self.policy_network(), memory, self.config)
       agents.append(agent)
 

@@ -37,9 +37,6 @@ class Losses(object):
           tf.minimum(self.loss, config.loss_clipping),
           name='loss')
 
-  # TODO Nothing handles alives yet
-  # TODO How are start/end of episodes going to work?
-
   def td_error(self, t=0):
     target_value = self.target_value(t)
     taken_action_value = self.policy_network[t].taken_action_value
@@ -51,11 +48,13 @@ class Losses(object):
   def value(self, t):
     if self.config.double_q:
       greedy_action = self.policy_network[t].greedy_action
-      return self.target_network[t].action_value(greedy_action)
+      value = self.target_network[t].action_value(greedy_action)
     elif self.config.sarsa:
-      return self.target_network[t].taken_action_value
+      value = self.target_network[t].taken_action_value
     else:
-      return self.target_network[t].value
+      value = self.target_network[t].value
+
+    return self.alive[t] * value
 
   def persistent_advantage_target(self, t):
     q_target = self.target_value(t)
@@ -110,17 +109,23 @@ class Losses(object):
 
     return penalty, error_rescaling
 
-  def actor_critic_loss(self, t, n):
+  def actor_critic_loss(self, t):
+    n = self.config.train_period
+    entropy_beta = self.config.entropy_beta
+
     policy_loss, value_loss = 0, 0
+    reward = self.alive[t + n] * self.policy_network[t + n].value
 
-    reward = self.policy_net.value(t + n)
     for i in range(n - 1, -1, -1):
-      reward = reward * self.discount + self.reward[t + i]
-      value = self.policy_net.value(t + i)
-      td_error = reward - value
+      policy_network = self.policy_network[t + i]
 
-      log_policy = self.policy_net.log_policy(t + 1)
-      policy_loss += log_policy * td_error
+      reward = self.reward[t + i] + self.discount * reward
+      value = policy_network.value
+      td_error = reward - value
+      log_policy = policy_network.log_policy
+      entropy = -tf.reduce_sum(policy_network.policy * log_policy)
+
+      policy_loss += log_policy * td_error + entropy_beta * entropy
       value_loss += tf.square(td_error)
 
     return policy_loss, value_loss
@@ -134,6 +139,7 @@ class Losses(object):
         return self.getitem(key)
 
     self.discount = config.discount_rate
+
     self.reward = ArraySyntax(
         lambda t: tf.expand_dims(factory.inputs(t).reward, axis=1))
     self.total_reward = ArraySyntax(lambda t: tf.tile(
@@ -141,6 +147,9 @@ class Losses(object):
         multiples=[1, config.num_bootstrap_heads]))
     self.action = ArraySyntax(
         lambda t: tf.expand_dims(factory.inputs(t).action, axis=1))
+    self.alive = ArraySyntax(
+        lambda t: tf.expand_dims(factory.inputs(t).alive, axis=1))
+
     self.policy_network = ArraySyntax(lambda t: factory.policy_network(t))
     self.target_network = ArraySyntax(lambda t: factory.target_network(t))
 

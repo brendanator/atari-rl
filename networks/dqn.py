@@ -9,14 +9,14 @@ class QNetwork(object):
   def __init__(self, scope, inputs, reward_scaling, config, reuse):
     self.scope = scope
     self.inputs = inputs
-    self.reward_scaling = reward_scaling
-    self.config = config
+    self.num_actions = config.num_actions
     self.num_heads = config.num_bootstrap_heads
-    self.using_ensemble = config.bootstrap_use_ensemble
 
     with tf.variable_scope(scope, reuse=reuse):
       self.conv_layers = self.build_conv_layers(config)
-      self.build_heads(self.conv_layers, config)
+      self.build_heads(self.conv_layers, reward_scaling, config)
+      if config.bootstrap_use_ensemble:
+        self.build_ensemble(config)
 
     self.sample_head()
 
@@ -37,17 +37,21 @@ class QNetwork(object):
 
     return conv_output
 
-  def build_heads(self, conv_output, config):
+  def build_heads(self, conv_output, reward_scaling, config):
     if config.actor_critic:
-      head = ActorCriticHead('actor-critic', conv_output, self.reward_scaling,
-                             config)
-      self.heads = [head]
-      self.value = head.value
-      self.greedy_action = head.greedy_action
+      self.heads = [
+          ActorCriticHead('head-%d' % i, conv_output, reward_scaling, config)
+          for i in range(self.num_heads)
+      ]
+
+      self.value = tf.stack([head.value for head in self.heads], axis=1)
+      self.greedy_action = tf.stack(
+          [self.greedy_action for head in self.heads], axis=1)
+
     else:
       self.heads = [
-          ActionValueHead('head-%d' % i, conv_output, self.reward_scaling,
-                          config) for i in range(self.num_heads)
+          ActionValueHead('head-%d' % i, conv_output, reward_scaling, config)
+          for i in range(self.num_heads)
       ]
 
       self.action_values = tf.stack(
@@ -62,18 +66,18 @@ class QNetwork(object):
       self.greedy_action = tf.squeeze(
           greedy_action, axis=2, name='greedy_actions')
 
-      if self.using_ensemble:
-        ensemble_votes = tf.reduce_sum(
-            tf.one_hot(self.greedy_action, config.num_actions), axis=1)
-        # Add some noise to break ties
-        noise = tf.random_uniform([config.num_actions])
-        _, ensemble_greedy_action = tf.nn.top_k(ensemble_votes + noise, k=1)
-        self.ensemble_greedy_action = tf.squeeze(
-            ensemble_greedy_action, axis=1, name='ensemble_greedy_action')
+  def build_ensemble(self, config):
+    ensemble_votes = tf.reduce_sum(
+        tf.one_hot(self.greedy_action, config.num_actions), axis=1)
+    # Add some noise to break ties
+    noise = tf.random_uniform([config.num_actions])
+    _, ensemble_greedy_action = tf.nn.top_k(ensemble_votes + noise, k=1)
+    self.ensemble_greedy_action = tf.squeeze(
+        ensemble_greedy_action, axis=1, name='ensemble_greedy_action')
 
   def action_value(self, action, name=None):
     return tf.reduce_sum(
-        self.action_values * tf.one_hot(action, self.config.num_actions),
+        self.action_values * tf.one_hot(action, self.num_actions),
         axis=2,
         name=name)
 

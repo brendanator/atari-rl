@@ -7,13 +7,13 @@ flags = tf.app.flags
 # Environment
 flags.DEFINE_string('game', 'SpaceInvaders',
                     'The Arcade Learning Environment game to play')
-flags.DEFINE_string('frameskip', '4',
+flags.DEFINE_string('frameskip', 4,
                     'Number of frames to repeat actions for. '
                     'Can be int or tuple with min and max+1')
 flags.DEFINE_float(
     'repeat_action_probability', 0.25,
     'Probability of ignoring the agent action and repeat last action')
-flags.DEFINE_string('input_shape', '[84, 84]', 'Rescale input to this shape')
+flags.DEFINE_string('input_shape', [84, 84], 'Rescale input to this shape')
 flags.DEFINE_integer('input_frames', 4, 'Number of frames to input')
 flags.DEFINE_integer(
     'max_noops', 30,
@@ -47,11 +47,6 @@ flags.DEFINE_float('reward_scaling_beta', 1e-4,
                    'Reward scaling exponential moving average coefficient')
 flags.DEFINE_float('reward_scaling_stddev', 1,
                    'Reward scaling standard deviation')
-flags.DEFINE_integer('train_period', 4,
-                     'The number of steps between training updates')
-flags.DEFINE_integer(
-    'target_network_update_period', 10000,
-    'The number of parameter updates before the target network is updated')
 flags.DEFINE_bool('dueling', False, 'Enable dueling network architecture')
 flags.DEFINE_bool('optimality_tightening', False,
                   'Enable optimality tightening')
@@ -65,21 +60,24 @@ flags.DEFINE_bool('exploration_bonus', False,
                   'Enable pseudo-count based exploration bonus')
 flags.DEFINE_float('exploration_beta', 0.05,
                    'Value to scale the exploration bonus by')
-flags.DEFINE_string('exploration_image_shape', '[42, 42]',
+flags.DEFINE_string('exploration_image_shape', [42, 42],
                     'Shape of image to use with CTS in exploration bonus')
 
 # Training
+flags.DEFINE_integer('batch_size', 32, 'Batch size. Ignored for async')
+flags.DEFINE_integer('num_steps', 50000000, 'Number of steps to train on')
+flags.DEFINE_integer(
+    'target_network_update_period', 10000,
+    'The number of parameter updates before the target network is updated')
 flags.DEFINE_string('async', None, 'Async algorithm [one_step|n_step|a3c]')
 flags.DEFINE_integer(
-    'num_threads', 8,
+    'num_threads', 16,
     'Number of asynchronous actor learners to run concurrently')
-flags.DEFINE_integer('batch_size', 32, 'Batch size')
-flags.DEFINE_integer('num_steps', 50000000, 'Number of steps to train on')
-flags.DEFINE_string('train_dir', 'checkpoints',
-                    'Directory to write checkpoints')
-flags.DEFINE_integer('summary_step_period', 100,
-                     'How many training steps between writing summaries')
+flags.DEFINE_integer('train_period', 4,
+                     'The number of steps between training updates')
 flags.DEFINE_float('discount_rate', 0.99, 'Discount rate for future rewards')
+
+# Exploration
 flags.DEFINE_float('initial_exploration', 1.0,
                    'Initial value of epsilon is epsilon-greedy exploration')
 flags.DEFINE_float('final_exploration', 0.1,
@@ -87,6 +85,8 @@ flags.DEFINE_float('final_exploration', 0.1,
 flags.DEFINE_integer(
     'final_exploration_frame', 1000000,
     'The number of frames over to anneal epsilon to its final value')
+
+# Clipping
 flags.DEFINE_float('reward_clipping', 1.0,
                    'Range around zero to limit rewards to. 0 to disable. '
                    'Disabled if reward_scaling is True')
@@ -94,6 +94,12 @@ flags.DEFINE_float('loss_clipping', 1.0,
                    'Range around zero to limit loss to. 0 to disable')
 flags.DEFINE_float('grad_clipping', 10.0,
                    'Range around zero to limit gradients to. 0 to disable')
+
+# Checkpoints/summaries
+flags.DEFINE_string('train_dir', 'checkpoints',
+                    'Directory to write checkpoints')
+flags.DEFINE_integer('summary_step_period', 100,
+                     'How many training steps between writing summaries')
 
 # Render
 flags.DEFINE_bool('render', False, 'Show game during training')
@@ -106,14 +112,29 @@ def main(_):
 
 def create_config():
   config = flags.FLAGS
-  config.frameskip = eval(config.frameskip)
-  config.input_shape = eval(config.input_shape)
-  config.exploration_image_shape = eval(config.exploration_image_shape)
+  config.frameskip = eval(str(config.frameskip))
+  config.input_shape = eval(str(config.input_shape))
+  config.exploration_image_shape = eval(str(config.exploration_image_shape))
   config.reward_clipping = config.reward_clipping and not config.reward_scaling
   config.num_actions = Atari.num_actions(config)
-  if not config.async: config.num_threads = 1
   if not config.bootstrapped: config.num_boostrap_heads = 1
-  config.actor_critic = config.async == 'a3c'
+
+  if config.async is None:
+    config.num_threads = 1
+  else:
+    config.replay_capacity = config.train_period
+    config.replay_start_size = 0
+
+    if config.async == 'one_step':
+      config.batch_size = config.train_period
+    elif config.async == 'n_step':
+      config.batch_size = 1
+    elif config.async == 'a3c':
+      config.batch_size = 1
+    else:
+      raise Exception('Unknown asynchronous algorithm')
+    config.actor_critic = config.async == 'a3c'
+
   return config
 
 

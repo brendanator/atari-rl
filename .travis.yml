@@ -9,14 +9,26 @@ install:
   - pip install tensorflow
   - pip install -r requirements.txt
 script:
+  # Tests
   - pytest
+
+  # Synchronous algorithms
   - python main.py --replay_start_size 8 --num_steps 8 --summary_step_period 4
-  - python main.py --game air_raid --replay_start_size 8 --num_steps 8 --summary_step_period 4 --boostrapped
-  - python main.py --game amidar --replay_start_size 8 --num_steps 8 --summary_step_period 4 --dueling
-  - python main.py --game assault --replay_start_size 8 --num_steps 8 --summary_step_period 4 --double_q
-  - python main.py --game asterix --replay_start_size 8 --num_steps 8 --summary_step_period 4 --exploration_bonus
-  - python main.py --game asteroids --replay_start_size 8 --num_steps 8 --summary_step_period 4 --optimality_tightening
-  - python main.py --game atlantis --replay_start_size 8 --num_steps 8 --summary_step_period 4 --persistent_advantage_learning
-  - python main.py --game BankHeist --replay_start_size 8 --num_steps 8 --summary_step_period 4 --replay_prioritized
-  - python main.py --game battle_zone --replay_start_size 8 --num_steps 8 --summary_step_period 4 --reward_scaling
-  - python main.py --game zaxxon --replay_start_size 8 --num_steps 8 --summary_step_period 4 --boostrapped --dueling --double_q --exploration_bonus --optimality_tightening --persistent_advantage_learning --replay_prioritized --reward_scaling
+  - python main.py --game air_raid --replay_start_size 8 --num_steps 8 --boostrapped
+  - python main.py --game amidar --replay_start_size 8 --num_steps 8 --dueling
+  - python main.py --game assault --replay_start_size 8 --num_steps 8 --double_q
+  - python main.py --game asterix --replay_start_size 8 --num_steps 8 --exploration_bonus
+  - python main.py --game asteroids --replay_start_size 8 --num_steps 8 --optimality_tightening
+  - python main.py --game atlantis --replay_start_size 8 --num_steps 8 --persistent_advantage_learning
+  - python main.py --game BankHeist --replay_start_size 8 --num_steps 8 --replay_prioritized
+  - python main.py --game battle_zone --replay_start_size 8 --num_steps 8 --reward_scaling
+  - python main.py --game beam_rider --replay_start_size 8 --num_steps 8 --sarsa
+
+  # All synchronous algorithms combined
+  - python main.py --game yars_revenge --replay_start_size 8 --num_steps 8 --boostrapped --dueling --double_q --exploration_bonus --optimality_tightening --persistent_advantage_learning --replay_prioritized --reward_scaling
+
+  # Asynchronous algorithms
+  - python main.py --game Berzerk --num_steps 8 --async one_step
+  - python main.py --game bowling --num_steps 8 --async n_step
+  - python main.py --game boxing --num_steps 8 --async n_step --sarsa
+  - python main.py --game Breakout --num_steps 8 --async a3c

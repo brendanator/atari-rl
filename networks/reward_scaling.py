@@ -1,5 +1,4 @@
 import tensorflow as tf
-import util
 
 
 class RewardScaling(object):
@@ -14,10 +13,8 @@ class RewardScaling(object):
     self.variance = config.reward_scaling_stddev**2
 
     with tf.variable_scope('reward_scaling'):
-      self.scale_weight = util.variable_with_weight_decay(
-          'scale_weight', 1, wd=None)
-      self.scale_bias = util.variable_with_weight_decay(
-          'scale_bias', 1, wd=None)
+      self.scale_weight = tf.get_variable('scale_weight', 1)
+      self.scale_bias = tf.get_variable('scale_bias', 1)
 
       self.sigma_squared_input = tf.placeholder(tf.float32, (),
                                                 'sigma_squared_input')

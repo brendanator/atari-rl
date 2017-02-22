@@ -3,18 +3,18 @@ import tensorflow as tf
 
 
 class ReplayMemory(object):
-  def __init__(self, config):
+  def __init__(self, pre_input_offset, post_input_offset, config):
+    # Input offsets that must be valid. Final offset can be safely ignored
+    self.input_range = np.arange(pre_input_offset, post_input_offset)
+
     # Config
     self.capacity = config.replay_capacity
     self.discount_rate = config.discount_rate
-    if config.optimality_tightening:
-      self.constraint_steps = config.optimality_tightening_steps
-    else:
-      self.constraint_steps = 0
+    self.recent_only = config.async is not None
     self.prioritized = config.replay_prioritized
 
     # Track position and count in memory
-    self.cursor = 0
+    self.cursor = -1  # Cursor points to the last transition written
     self.count = 0
 
     # Store all values in numpy arrays
@@ -40,6 +40,9 @@ class ReplayMemory(object):
           config.num_steps)
 
   def store(self, observation, action, reward, done):
+    self.cursor = (self.cursor + 1) % self.capacity
+    self.count = min(self.count + 1, self.capacity)
+
     self.observations[self.cursor] = observation
     self.actions[self.cursor] = action
     self.rewards[self.cursor] = reward
@@ -50,14 +53,11 @@ class ReplayMemory(object):
 
     if done:
       # Update total_rewards for episode
-      i = self.cursor - 1
+      i = self.cursor - 1 % self.capacity
       while self.alives[i] and i < self.count:
         reward = reward * self.discount_rate + self.rewards[i]
         self.total_rewards[i] = reward
         i = (i - 1) % self.capacity
-
-    self.cursor = (self.cursor + 1) % self.capacity
-    self.count = min(self.count + 1, self.capacity)
 
   def update_priorities(self, indices, errors):
     if self.prioritized:
@@ -67,55 +67,24 @@ class ReplayMemory(object):
 
   def sample_batch(self, batch_size, step):
     return SampleBatch(self, self.sample_indices(batch_size), step)
-    # indices = self.sample_indices(batch_size)
-
-    # observations = self.observations[indices]
-    # actions = self.actions[indices]
-    # rewards = self.rewards[indices]
-    # alives = self.alives[indices]
-    # next_indices = (indices + 1) % self.capacity
-    # next_observations = self.observations[next_indices]
-    # next_actions = self.actions[next_indices]
-
-    # if self.prioritized:
-    #   error_weights = self.priorities.error_weights(indices, self.count,
-    #     step)
-    # else:
-    #   error_weights = np.ones_like(indices)
-
-    # past_offsets = np.arange(-1, -self.constraint_steps - 1, -1)
-    # past_indices = (indices.reshape(-1, 1) + past_offsets) % self.capacity
-    # past_observations = self.observations[past_indices]
-    # past_actions = self.actions[past_indices]
-    # past_rewards = self.rewards[past_indices]
-    # past_alives = self.alives[past_indices]
-
-    # future_offsets = np.arange(1, self.constraint_steps + 1)
-    # future_indices = (indices.reshape(-1, 1) + future_offsets) %
-    #    self.capacity
-    # future_observations = self.observations[(future_indices + 1) %
-    #                                         self.capacity]
-    # future_rewards = self.rewards[future_indices]
-    # future_alives = self.alives[future_indices]
-
-    # total_rewards = self.total_rewards[indices]
-    # bootstrap_mask = self.bootstrap_masks[indices]
-
-    # return SampleBatch(indices, observations, actions, rewards, alives,
-    #                    next_observations, next_actions, error_weights,
-    #                    past_observations, past_actions, past_rewards,
-    #                    past_alives, future_observations, future_rewards,
-    #                    future_alives, total_rewards, bootstrap_mask)
 
   def sample_indices(self, batch_size):
     indices = []
 
-    for i in range(batch_size):
-      index = self.sample_index()
-      while index in indices or not self.valid_index(index):
-        index = self.sample_index()
+    if self.recent_only:
+      index = self.cursor
+      for i in range(batch_size):
+        while not self.valid_index(index, indices):
+          index -= 1
+        indices.append(index)
+        index -= len(self.input_range)
 
-      indices.append(index)
+    else:
+      for i in range(batch_size):
+        index = self.sample_index()
+        while not self.valid_index(index, indices):
+          index = self.sample_index()
+        indices.append(index)
 
     return np.array(indices)
 
@@ -125,23 +94,21 @@ class ReplayMemory(object):
     else:
       return np.random.randint(self.count)
 
-  def available(self):
-    available = self.count
+  def valid_index(self, index, indices):
+    # Reject indices too close to the cursor or to the start/end of episode
+    index_range = index + self.input_range
+    excludes_cursor = self.cursor not in index_range
+    within_episode = self.alives[index_range].all()
+    if not (excludes_cursor and within_episode):
+      return False
 
-    if self.constraint_steps:
-      available -= 2 * self.constraint_steps - 1
+    # Reject indices whose range overlaps existing indices ranges
+    index_range = index_range.reshape([1, -1]).transpose()
+    for other in indices:
+      if (index_range == other + self.input_range).any():
+        return False
 
-    return available
-
-  def valid_index(self, index):
-    # TODO Get range from NetworkInputs
-    # Don't return states that may have incomplete constraint data
-    offset = self.constraint_steps + 1
-
-    close_below = (index <= self.cursor) and (self.cursor <= index + offset)
-    close_above = (index - offset <= self.cursor) and (self.cursor <= index)
-
-    return not (close_below or close_above)
+    return True
 
 
 class SampleBatch(object):
@@ -150,41 +117,23 @@ class SampleBatch(object):
     self.indices = indices
     self.step = step
 
-  def __len__(self):
-    return len(self.indices)
+  def offset_indices(self, offset):
+    return (self.indices + offset) % self.replay_memory.capacity
 
-  # TODO Merge this stuff into inputs?
-  def offset_indices(self, offset, offset_end):
-    if not offset:
-      offsets = 0
-    elif not offset_end:
-      offsets = offset
-    elif offset <= offset_end:
-      offsets = np.arange(offset, offset_end)
-    else:
-      offsets = np.arange(offset_end, offset, -1)
+  def observations(self, offset):
+    return self.replay_memory.observations[self.offset_indices(offset)]
 
-    return (self.indices + offsets) % self.replay_memory.capacity
+  def actions(self, offset):
+    return self.replay_memory.actions[self.offset_indices(offset)]
 
-  def observations(self, offset=None, offset_end=None):
-    indices = self.offset_indices(offset, offset_end)
-    return self.replay_memory.observations[indices]
+  def rewards(self, offset):
+    return self.replay_memory.rewards[self.offset_indices(offset)]
 
-  def actions(self, offset=None, offset_end=None):
-    indices = self.offset_indices(offset, offset_end)
-    return self.replay_memory.actions[indices]
+  def alives(self, offset):
+    return self.replay_memory.alives[self.offset_indices(offset)]
 
-  def rewards(self, offset=None, offset_end=None):
-    indices = self.offset_indices(offset, offset_end)
-    return self.replay_memory.rewards[indices]
-
-  def alives(self, offset=None, offset_end=None):
-    indices = self.offset_indices(offset, offset_end)
-    return self.replay_memory.alives[indices]
-
-  def total_rewards(self, offset=None, offset_end=None):
-    indices = self.offset_indices(offset, offset_end)
-    return self.replay_memory.total_rewards[indices]
+  def total_rewards(self, offset):
+    return self.replay_memory.total_rewards[self.offset_indices(offset)]
 
   def importance_sampling(self):
     if self.replay_memory.prioritized:
@@ -293,7 +242,7 @@ class ProportionalPriorities(object):
         index = self.right_child(index)
         value -= left_value
 
-  def error_weights(self, indices, count, step):
+  def importance_sampling(self, indices, count, step):
     probabilities = self.sum_tree[indices + (self.capacity - 1)]
     beta = self.annealed_beta(step)
     error_weights = (1.0 / (count * probabilities))**beta
