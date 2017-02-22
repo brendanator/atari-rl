@@ -1,13 +1,16 @@
 dist: trusty
+
 language: python
 python:
   - 2.7
   - 3.5
+
 install:
   - pip install --upgrade pip setuptools wheel
   - pip install --only-binary=numpy,scipy numpy scipy
   - pip install tensorflow
   - pip install -r requirements.txt
+
 script:
   # Tests
   - pytest
@@ -32,3 +35,11 @@ script:
   - python main.py --game bowling --num_steps 8 --async n_step
   - python main.py --game boxing --num_steps 8 --async n_step --sarsa
   - python main.py --game Breakout --num_steps 8 --async a3c
+
+notifications:
+  email: false
+  slack:
+    rooms:
+      secure: hXSpVdGwpVhJVa5jHj3NLPKLgVjKxF3nb4aBeuAPkCgpcPcBxKITD/BRXTPb5XQwE4Ccq7joihs/HlCVlio0+sSTMQIjxr1TNZcXS26Oz/lkY6O0ZRfB9rnftNas6Mea8dz6cUAnIcjaaXBzAn4N13tVj/vbsWWpbB9/2Xpjqk4ax1eL9KiD1KlJXLjoB6lXaMSbCm9bmURAJZf507ZaXz8pehW29RsOcnJyhjlmHB3i26rRVk2evHv4Y6PXZSOLxsMY7XV4PfqoJKznFBCTSB+WHtTfQLU35JnvHH3YMW9K+wAlQcoTzIMMGHwGyz7pJUM/s2uIgEy7wWdB0sF3bDg4NCPrx6KHv0up4c4ow89ElLfkEsx+wZUvXCcsGApLfnf6WZb6i3momKzB2xalond5xzqTvdmjB7K0U+dEdPq/M7R1PMZZSTYG0hee9ATWHvjK1QZmYPTM0T+J5GxgTckz4NUvX8owejUFZGdAQED7Q+vvODLMxnDckIx/pCq5Swcirjmo83tAPmopavKozDTjus/vjM21gvVvxJwgEDcMjfrub7Y6iqQoJ+gTDDeh3xEzZGnzWAX4ax9PI0oXequmacs8xqrGbMrUI0S0ZxTAWgjeQ7HalNIxmqosdDnDedI8dE5ruRmng4BK4zATh2X6NuWDfVRKh3sX27aAKFc=
+    on_success: change
+    on_failure: always
