@@ -49,7 +49,7 @@ class Atari(object):
       self.frames.append(frame)
       self.score += reward_
 
-      if done: self.reset(render)
+      if done: self.reset()
 
     return self.frames, self.score, done
 
@@ -67,8 +67,8 @@ class Atari(object):
     duration = time.time() - self.start_time
     steps_per_sec = self.steps / duration
 
-    format_string = 'Episode %d, score %.0f (%d steps, %.2f secs, %.2f steps/sec)'
-    util.log(format_string %
+    message = 'Episode %d, score %.0f (%d steps, %.2f secs, %.2f steps/sec)'
+    util.log(message %
              (self.episode, self.score, self.steps, duration, steps_per_sec))
 
   @classmethod

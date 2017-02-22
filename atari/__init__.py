@@ -1,1 +1,1 @@
-from .atari  import *
+from .atari import Atari

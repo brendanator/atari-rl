@@ -78,7 +78,8 @@ class ReplayMemory(object):
     # next_actions = self.actions[next_indices]
 
     # if self.prioritized:
-    #   error_weights = self.priorities.error_weights(indices, self.count, step)
+    #   error_weights = self.priorities.error_weights(indices, self.count,
+    #     step)
     # else:
     #   error_weights = np.ones_like(indices)
 
@@ -90,7 +91,8 @@ class ReplayMemory(object):
     # past_alives = self.alives[past_indices]
 
     # future_offsets = np.arange(1, self.constraint_steps + 1)
-    # future_indices = (indices.reshape(-1, 1) + future_offsets) % self.capacity
+    # future_indices = (indices.reshape(-1, 1) + future_offsets) %
+    #    self.capacity
     # future_observations = self.observations[(future_indices + 1) %
     #                                         self.capacity]
     # future_rewards = self.rewards[future_indices]
@@ -225,15 +227,6 @@ class SampleBatch(object):
       tensor.placeholders = placeholders
 
       return placeholders
-
-
-class LinearReplayMemory(ReplayMemory):
-  def sample_indices(self, batch_size):
-    return np.arange(batch_size)
-
-  def clear(self):
-    self.cursor = 0
-    self.count = 0
 
 
 class ProportionalPriorities(object):

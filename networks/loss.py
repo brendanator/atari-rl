@@ -64,10 +64,14 @@ class Losses(object):
 
     advantage = self.value(t) - self.target_network[t].action_value(action)
     advantage_learning = q_target - alpha * advantage
-    next_advantage = \
-            self.value(t + 1) - self.target_network[t + 1].action_value(action)
+    next_advantage = (
+        self.value(t + 1) - self.target_network[t + 1].action_value(action))
     next_advantage_learning = q_target - alpha * next_advantage
-    return tf.maximum(al, next_al, name='persistent_advantage_learning')
+
+    return tf.maximum(
+        advantage_learning,
+        next_advantage_learning,
+        name='persistent_advantage_learning')
 
   def optimality_tightening(self):
     # Upper bounds
@@ -111,7 +115,7 @@ class Losses(object):
 
     reward = self.policy_net.value(t + n)
     for i in range(n - 1, -1, -1):
-      reward = reward * discount_rate + Reward(t + i)
+      reward = reward * self.discount + self.reward[t + i]
       value = self.policy_net.value(t + i)
       td_error = reward - value
 
@@ -131,12 +135,12 @@ class Losses(object):
 
     self.discount = config.discount_rate
     self.reward = ArraySyntax(
-      lambda t: tf.expand_dims(factory.inputs(t).reward, axis=1))
+        lambda t: tf.expand_dims(factory.inputs(t).reward, axis=1))
     self.total_reward = ArraySyntax(lambda t: tf.tile(
         tf.expand_dims(factory.inputs(t).total_reward, axis=1),
         multiples=[1, config.num_bootstrap_heads]))
     self.action = ArraySyntax(
-      lambda t: tf.expand_dims(factory.inputs(t).action, axis=1))
+        lambda t: tf.expand_dims(factory.inputs(t).action, axis=1))
     self.policy_network = ArraySyntax(lambda t: factory.policy_network(t))
     self.target_network = ArraySyntax(lambda t: factory.target_network(t))
 

@@ -1,115 +1,96 @@
-import numpy as np
 import os
 import tensorflow as tf
+from threading import Thread
 
-from .agent import Agent
-from .replay_memory import ReplayMemory
-from networks import Losses, NetworkFactory
+from networks import NetworkFactory
 import util
 
 
 class Trainer(object):
   def __init__(self, config):
+    util.log('Creating network and training operations')
     self.config = config
 
-    # Create network factory
-    self.factory = NetworkFactory(config)
-    self.reward_scaling = self.factory.reward_scaling
+    # Creating networks
+    factory = NetworkFactory(config)
+    self.agents = factory.create_agents()
+    self.global_step, self.train_op = factory.create_train_ops()
+    self.reset_op = factory.create_reset_target_network_op()
 
-    # Create action-value network
-    self.policy_network = self.factory.policy_network()
-
-    # Build loss
-    self.losses = Losses(self.factory, config)
-
-    # Create training operation
-    self.build_train_op()
-
-    # Create agent
-    self.replay_memory = ReplayMemory(config)
-    self.agent = Agent(self.policy_network, self.replay_memory, config)
-    self.agent.populate_replay_memory()
-
-    # Build reset operation
-    self.factory.create_reset_target_network_op()
-
-    # Summary/checkpoint
+    # Checkpoint/summary
     self.checkpoint_dir = os.path.join(config.train_dir, config.game)
     self.summary_writer = tf.summary.FileWriter(self.checkpoint_dir)
     self.summary_op = tf.summary.merge_all()
 
-  def build_train_op(self):
-    # Optimizer
-    opt = tf.train.AdamOptimizer()
-
-    # Compute gradients
-    policy_vars = self.policy_network.variables
-    reward_scaling_vars = self.reward_scaling.variables
-    grads = opt.compute_gradients(
-        self.losses.loss, var_list=policy_vars + reward_scaling_vars)
-
-    # Apply normalized SGD for reward scaling
-    grads = self.reward_scaling.scale_gradients(grads, policy_vars)
-
-    # Clip gradients
-    if self.config.grad_clipping:
-      grads = [(tf.clip_by_value(grad, -self.config.grad_clipping,
-                                 self.config.grad_clipping), var)
-               for grad, var in grads if grad is not None]
-
-    # Create training op
-    loss_summaries = util.add_loss_summaries(self.losses.loss)
-    global_step = tf.contrib.framework.get_or_create_global_step()
-    minimize = opt.apply_gradients(grads, global_step=global_step)
-    with tf.control_dependencies([loss_summaries, minimize]):
-      self.train_op = tf.identity(self.losses.td_error, name='train')
-
-    # Add histograms for trainable variables.
-    for var in tf.trainable_variables():
-      tf.summary.histogram('trainable', var)
-
-    # Add histograms for gradients.
-    for grad, var in grads:
-      if grad is not None:
-        tf.summary.histogram('gradient', grad)
-
   def train(self):
-    with tf.train.MonitoredTrainingSession(
+    util.log('Creating session and loading checkpoint')
+    session = tf.train.MonitoredTrainingSession(
         checkpoint_dir=self.checkpoint_dir,
         save_summaries_steps=0  # Summaries will be saved with train_op only
-    ) as session:
+    )
 
-      # Initialize step count
-      step = 0
+    with session:
+      if len(self.agents) == 1:
+        self.train_agent(session, self.agents[0])
+      else:
+        self.train_threaded(session)
 
-      while step < self.config.num_steps:
-        # Start new episode
-        observation, _, done = self.agent.new_game()
+    util.log('Training complete')
 
-        # Play until losing
-        while not done:
-          self.factory.reset_target_network(session, step)
-          action = self.agent.action(session, step, observation)
-          observation, _, done = self.agent.take_action(action)
-          self.train_batch(session, step)
-          step += 1
+  def train_threaded(self, session):
+    threads = []
+    for i, agent in enumerate(self.agents):
+      thread = Thread(target=self.train_agent, args=(session, agent))
+      thread.name = 'Agent-%d' % (i + 1)
+      thread.start()
+      threads.append(thread)
 
-        # Log episode
-        self.agent.log_episode()
+    for thread in threads:
+      thread.join()
 
-  def train_batch(self, session, step):
-    if step % self.config.train_period > 0: return
+  def train_agent(self, session, agent):
+    # Populate replay memory
+    util.log('Populating replay memory')
+    agent.populate_replay_memory()
 
-    batch = self.replay_memory.sample_batch(self.config.batch_size, step)
+    # Initialize step counts
+    global_step, step = 0, 0
 
-    if step % self.config.summary_step_period == 0:
-      fetches = [self.train_op, self.summary_op]
-      feed_dict = batch.build_feed_dict(fetches)
-      td_errors, summary = session.run(fetches, feed_dict)
-      self.summary_writer.add_summary(summary, step)
-    else:
-      fetches = self.train_op
-      feed_dict = batch.build_feed_dict(fetches)
-      td_errors = session.run(fetches, feed_dict)
+    util.log('Starting training')
+    while global_step < self.config.num_steps:
+      # Start new episode
+      observation, _, done = agent.new_game()
 
-    self.replay_memory.update_priorities(batch.indices, td_errors)
+      # Play until losing
+      while not done:
+        self.reset_target_network(session, step)
+        action = agent.action(session, step, observation)
+        observation, _, done = agent.take_action(action)
+        global_step = self.train_batch(session, agent.replay_memory, step,
+                                       global_step)
+        step += 1
+
+      # Log episode
+      agent.log_episode()
+
+  def reset_target_network(self, session, step):
+    if self.reset_op and step % self.config.target_network_update_period == 0:
+      session.run(self.reset_op)
+
+  def train_batch(self, session, replay_memory, step, global_step):
+    if step % self.config.train_period == 0:
+      batch = replay_memory.sample_batch(self.config.batch_size, global_step)
+
+      if global_step % self.config.summary_step_period == 0:
+        fetches = [self.global_step, self.train_op, self.summary_op]
+        feed_dict = batch.build_feed_dict(fetches)
+        global_step, td_errors, summary = session.run(fetches, feed_dict)
+        self.summary_writer.add_summary(summary, global_step)
+      else:
+        fetches = [self.global_step, self.train_op]
+        feed_dict = batch.build_feed_dict(fetches)
+        global_step, td_errors = session.run(fetches, feed_dict)
+
+      replay_memory.update_priorities(batch.indices, td_errors)
+
+    return global_step

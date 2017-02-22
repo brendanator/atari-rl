@@ -1,7 +1,6 @@
-import agents.training
-import atari
+from agents import Trainer
+from atari import Atari
 import tensorflow as tf
-import util
 
 flags = tf.app.flags
 
@@ -101,21 +100,21 @@ flags.DEFINE_bool('render', False, 'Show game during training')
 
 
 def main(_):
+  trainer = Trainer(create_config())
+  trainer.train()
+
+
+def create_config():
   config = flags.FLAGS
   config.frameskip = eval(config.frameskip)
   config.input_shape = eval(config.input_shape)
   config.exploration_image_shape = eval(config.exploration_image_shape)
-  # TODO Is this correct here?
   config.reward_clipping = config.reward_clipping and not config.reward_scaling
-  config.num_actions = atari.Atari.num_actions(config)
+  config.num_actions = Atari.num_actions(config)
+  if not config.async: config.num_threads = 1
   if not config.bootstrapped: config.num_boostrap_heads = 1
   config.actor_critic = config.async == 'a3c'
-
-  util.log('Building network and training operations')
-  trainer = agents.training.Trainer(config)
-
-  util.log('Starting training')
-  trainer.train()
+  return config
 
 
 if __name__ == '__main__':

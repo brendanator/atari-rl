@@ -1,8 +1,7 @@
 import tensorflow as tf
-import numpy as np
 import math
 
-from agents.replay_memory import *
+from agents.replay_memory import LinearReplayMemory, ProportionalPriorities
 
 
 class ReplayMemoryTest(tf.test.TestCase):

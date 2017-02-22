@@ -1,35 +1,10 @@
-import tensorflow as tf
 import numpy as np
 
-from atari.atari import Atari
-import util
+from atari import Atari
 from agents.exploration_bonus import ExplorationBonus
-import tensorflow as tf
-
-# Agent contains code for
-#   - playing game
-#   - constructing dqn and other networks
-#   - reward scaling/exploration_bonus
-#   - building loss
-#   - building train op
-#   - constructing replay_memory
-#   - populating replay memory
-#   - training/building feed_dict
+import util
 
 
-# Should contain
-#   - playing game
-#   - populating replay memory
-#   - frame_processing/reward scaling/exploration_bonus
-# Passed into constructor
-#   - dqn and other networks
-#   - replay_memory/subclasses of this for different types of training. Also create batch object with data source
-# Done in train
-#   - building loss
-#   - building train op
-#   - training/building feed_dict
-# Unknown
-#   - Where does reward scaling/reward clipping go?
 class Agent(object):
   def __init__(self, policy_network, replay_memory, config):
     self.config = config
@@ -97,8 +72,6 @@ class Agent(object):
 
   def populate_replay_memory(self):
     """Play game with random actions to populate the replay memory"""
-
-    util.log('Populating replay memory')
 
     count = 0
     done = True

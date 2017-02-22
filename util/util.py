@@ -67,16 +67,9 @@ def log(message):
   print('%s %s: %s' % (now, thread_id, message))
 
 
-def log_episode(episode, start_time, score, steps):
-  duration = time.time() - start_time
-  steps_per_sec = steps / duration
-  format_string = 'Episode %d, score %.0f (%d steps, %.2f secs, %.2f steps/sec)'
-  log(format_string % (episode, score, steps, duration, steps_per_sec))
-
-
 def memoize(f):
   """ Memoization decorator for a function taking one or more arguments.
-    Taken from here: https://code.activestate.com/recipes/578231-probably-the-fastest-memoization-decorator-in-the-/#c4
+    Taken from here: https://goo.gl/gxOVPQ
     """
 
   class memodict(dict):
