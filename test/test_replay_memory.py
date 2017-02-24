@@ -1,83 +1,53 @@
 import tensorflow as tf
-import math
 
-from agents.replay_memory import LinearReplayMemory, ProportionalPriorities
+from agents.replay_memory import ReplayMemory, SampleBatch
+from .mock import Mock
 
 
 class ReplayMemoryTest(tf.test.TestCase):
   def test_replay_memory(self):
-    class Config(object):
-      pass
+    config = Mock(
+        replay_capacity=12,
+        optimality_tightening=True,
+        optimality_tightening_steps=4,
+        discount_rate=0.99,
+        input_frames=1,
+        input_shape=[],
+        replay_priorities='uniform',
+        num_bootstrap_heads=1,
+        bootstrap_mask_probability=1.0,
+        async=None)
+    pre_input_offset = -3
+    post_input_offset = 2
+    memory = ReplayMemory(pre_input_offset, post_input_offset, config)
 
-    config = Config()
-    config.replay_capacity = 100
-    config.optimality_tightening = True
-    config.optimality_tightening_steps = 4
-    config.discount_rate = 0.99
-    config.input_frames = 1
-    config.input_shape = [1, 1]
-    config.replay_prioritized = False
-    config.num_bootstrap_heads = 1
-    config.bootstrap_mask_probability = 1.0
-    memory = LinearReplayMemory(config)
+    memory.store_new_episode(0)
+    for i in range(1, 10):
+      memory.store_transition(i - 1, i - 1, False, i)
+    memory.store_transition(9, 9, True, 10)
 
-    for i in range(10):
-      memory.store(i, i, i, False)
-    memory.store(10, 10, 10, True)
-    for i in range(10):
-      memory.store(i, i, i, False)
+    indices = memory.recent_indices(2)
+    batch = SampleBatch(memory, indices, 0)
+    self.assertAllEqual(indices, [8, 3])
 
-    batch = memory.sample_batch(11, 0)
+    for offset in range(pre_input_offset, post_input_offset):
+      self.assertAllEqual(
+          batch.observations(offset), indices.reshape([-1, 1]) + offset)
+      self.assertAllEqual(batch.actions(offset), indices + offset)
+      self.assertAllEqual(batch.rewards(offset), indices + offset)
+      self.assertAllEqual(batch.alives(offset), [True, True])
 
-    # Test near start
-    i = 3
-    self.assertEqual(batch.alives[i], True)
+    # Final offset is a little different
+    offset = post_input_offset
+    self.assertAllEqual(batch.observations(offset), [[10], [5]])
+    self.assertAllEqual(batch.actions(offset), [0, 5])
+    self.assertAllEqual(batch.rewards(offset), [0, 5])
+    self.assertAllEqual(batch.alives(offset), [False, True])
 
-    self.assertAllEqual(batch.past_observations[i].flatten(), [2, 1, 0, 0])
-    self.assertEqual(batch.observations[i], 3)
-    self.assertEqual(batch.next_observations[i], 4)
-    self.assertAllEqual(batch.future_observations[i].flatten(), [5, 6, 7, 8])
-
-    self.assertAllEqual(batch.past_actions[i].flatten(), [2, 1, 0, 0])
-    self.assertEqual(batch.actions[i], 3)
-
-    self.assertAllEqual(batch.past_rewards[i].flatten(), [2, 1, 0, 0])
-    self.assertEqual(batch.rewards[i], 3)
-    self.assertAllEqual(batch.future_rewards[i].flatten(), [4, 5, 6, 7])
     total_reward = sum([
-        reward * config.discount_rate**(reward - 3) for reward in range(3, 11)
+        reward * config.discount_rate**(reward - 3) for reward in range(3, 10)
     ])
-    self.assertNear(batch.total_rewards[i], total_reward, err=0.000001)
-
-  def test_proportional_priority(self):
-    priority = ProportionalPriorities(11, 1, 0, 1)
-    for i in range(11):
-      priority.update(i, i)
-
-    # Each index should be sampled in proportion to its value
-    # Check that each the number for each index is within 3 standard deviations
-    # of the expected value
-    multiple = 10000
-    number_samples = int(priority.total_priority() * multiple)
-    indices = [priority.sample_index() for i in range(number_samples)]
-    for i in range(11):
-      count = len([index for index in indices if index == i])
-      self.assertNear(i * multiple, count, 3 * math.sqrt(multiple))
-
-    self.assertEqual(priority.total_priority(), 55)
-    self.assertEqual(priority.max_priority(), 10)
-
-    priority.update(10, 20)
-    self.assertEqual(priority.total_priority(), 65)
-    self.assertEqual(priority.max_priority(), 20)
-
-    priority.update(10, 0)
-    self.assertEqual(priority.max_priority(), 9)
-    self.assertEqual(priority.total_priority(), 45)
-
-    priority.update(5, 12)
-    self.assertEqual(priority.max_priority(), 12)
-    self.assertEqual(priority.total_priority(), 52)
+    self.assertNear(batch.total_rewards(0)[1], total_reward, err=0.0001)
 
 
 if __name__ == "__main__":

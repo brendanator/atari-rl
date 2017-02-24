@@ -7,8 +7,7 @@ flags = tf.app.flags
 # Environment
 flags.DEFINE_string('game', 'SpaceInvaders',
                     'The Arcade Learning Environment game to play')
-flags.DEFINE_string('frameskip', 4,
-                    'Number of frames to repeat actions for. '
+flags.DEFINE_string('frameskip', 4, 'Number of frames to repeat actions for. '
                     'Can be int or tuple with min and max+1')
 flags.DEFINE_float(
     'repeat_action_probability', 0.25,
@@ -34,8 +33,9 @@ flags.DEFINE_integer('replay_capacity', 100000, 'Size of replay memory')
 flags.DEFINE_integer(
     'replay_start_size', 50000,
     'Pre-populate the replay memory with this number of random actions')
-flags.DEFINE_bool('replay_prioritized', False,
-                  'Enable prioritized replay memory')
+flags.DEFINE_string(
+    'replay_priorities', 'uniform',
+    'Prioritized replay memory implementation: [uniform|proportional]')
 flags.DEFINE_float('replay_alpha', 0.6,
                    'Prioritized experience replay exponent')
 flags.DEFINE_float('replay_beta', 0.4, 'Initial importance sampling exponent')
@@ -122,7 +122,7 @@ def create_config():
   if config.async is None:
     config.num_threads = 1
   else:
-    config.replay_capacity = config.train_period
+    config.replay_capacity = (config.train_period + 2)
     config.replay_start_size = 0
 
     if config.async == 'one_step':
@@ -132,8 +132,9 @@ def create_config():
     elif config.async == 'a3c':
       config.batch_size = 1
     else:
-      raise Exception('Unknown asynchronous algorithm')
-    config.actor_critic = config.async == 'a3c'
+      raise Exception('Unknown asynchronous algorithm: ' + config.async)
+  config.n_step = config.async == 'n_step'
+  config.actor_critic = config.async == 'a3c'
 
   return config
 

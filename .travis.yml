@@ -23,7 +23,7 @@ script:
   - python main.py --game asterix --replay_start_size 8 --num_steps 8 --exploration_bonus
   - python main.py --game asteroids --replay_start_size 8 --num_steps 8 --optimality_tightening
   - python main.py --game atlantis --replay_start_size 8 --num_steps 8 --persistent_advantage_learning
-  - python main.py --game BankHeist --replay_start_size 8 --num_steps 8 --replay_prioritized
+  - python main.py --game BankHeist --replay_start_size 8 --num_steps 8 --replay_priorities proportional
   - python main.py --game battle_zone --replay_start_size 8 --num_steps 8 --reward_scaling
   - python main.py --game beam_rider --replay_start_size 8 --num_steps 8 --sarsa
 

@@ -38,9 +38,14 @@ class Losses(object):
           name='loss')
 
   def td_error(self, t=0):
-    target_value = self.target_value(t)
-    taken_action_value = self.policy_network[t].taken_action_value
-    return target_value - taken_action_value
+    if self.config.n_step:
+      return self.n_step_loss(t)
+    elif self.config.actor_critic:
+      return self.actor_critic_loss(t)
+    else:
+      target_value = self.target_value(t)
+      taken_action_value = self.policy_network[t].taken_action_value
+      return target_value - taken_action_value
 
   def target_value(self, t=0):
     return self.reward[t] + self.discount * self.value(t + 1)
@@ -48,13 +53,11 @@ class Losses(object):
   def value(self, t):
     if self.config.double_q:
       greedy_action = self.policy_network[t].greedy_action
-      value = self.target_network[t].action_value(greedy_action)
+      return self.target_network[t].action_value(greedy_action)
     elif self.config.sarsa:
-      value = self.target_network[t].taken_action_value
+      return self.target_network[t].taken_action_value
     else:
-      value = self.target_network[t].value
-
-    return self.alive[t] * value
+      return self.target_network[t].value
 
   def persistent_advantage_target(self, t):
     q_target = self.target_value(t)
@@ -109,12 +112,27 @@ class Losses(object):
 
     return penalty, error_rescaling
 
+  def n_step_loss(self, t):
+    n = self.config.train_period
+
+    loss = 0
+    reward = self.policy_network[t + n].value
+
+    for i in range(n - 1, -1, -1):
+      reward = self.reward[t + i] + self.discount * reward
+      value = self.policy_network[t + i].value
+      td_error = reward - value
+
+      loss += tf.square(td_error)
+
+    return loss
+
   def actor_critic_loss(self, t):
     n = self.config.train_period
     entropy_beta = self.config.entropy_beta
 
     policy_loss, value_loss = 0, 0
-    reward = self.alive[t + n] * self.policy_network[t + n].value
+    reward = self.policy_network[t + n].value
 
     for i in range(n - 1, -1, -1):
       policy_network = self.policy_network[t + i]
@@ -147,8 +165,6 @@ class Losses(object):
         multiples=[1, config.num_bootstrap_heads]))
     self.action = ArraySyntax(
         lambda t: tf.expand_dims(factory.inputs(t).action, axis=1))
-    self.alive = ArraySyntax(
-        lambda t: tf.expand_dims(factory.inputs(t).alive, axis=1))
 
     self.policy_network = ArraySyntax(lambda t: factory.policy_network(t))
     self.target_network = ArraySyntax(lambda t: factory.target_network(t))

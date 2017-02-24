@@ -18,8 +18,9 @@ class Agent(object):
   def new_game(self):
     self.policy_network.sample_head()
     frames, reward, done = self.atari.reset()
-    self.observation = self.process_frames(frames)
-    return self.observation, reward, done
+    observation = self.process_frames(frames)
+    self.replay_memory.store_new_episode(observation)
+    return observation, reward, done
 
   def action(self, session, step, observation):
     # Epsilon greedy exploration/exploitation even for bootstrapped DQN
@@ -44,12 +45,13 @@ class Agent(object):
   def take_action(self, action):
     frames, reward, done = self.atari.step(action)
     training_reward = self.process_reward(reward, frames)
+    observation = self.process_frames(frames)
 
-    # Store action, reward and done with the last observation
-    self.replay_memory.store(self.observation, action, training_reward, done)
+    # Store action, reward and done with the next observation
+    self.replay_memory.store_transition(action, training_reward, done,
+                                        observation)
 
-    self.observation = self.process_frames(frames)
-    return self.observation, reward, done
+    return observation, reward, done
 
   def process_frames(self, frames):
     observation = []
@@ -76,7 +78,7 @@ class Agent(object):
     count = 0
     done = True
 
-    while count <= self.config.replay_start_size or not done:
+    while count < self.config.replay_start_size or not done:
       if done: self.new_game()
       _, _, done = self.take_action(self.atari.sample_action())
       count += 1

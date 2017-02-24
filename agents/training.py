@@ -66,11 +66,11 @@ class Trainer(object):
         self.reset_target_network(session, step)
         action = agent.action(session, step, observation)
         observation, _, done = agent.take_action(action)
+        step += 1
         if done or (step - start_step == self.config.train_period):
           global_step = self.train_batch(session, agent.replay_memory,
                                          global_step)
           start_step = step
-        step += 1
 
       # Log episode
       agent.log_episode()
@@ -82,7 +82,7 @@ class Trainer(object):
   def train_batch(self, session, replay_memory, global_step):
     batch = replay_memory.sample_batch(self.config.batch_size, global_step)
 
-    if global_step % self.config.summary_step_period == 0:
+    if global_step > 0 and global_step % self.config.summary_step_period == 0:
       fetches = [self.global_step, self.train_op, self.summary_op]
       feed_dict = batch.build_feed_dict(fetches)
       global_step, td_errors, summary = session.run(fetches, feed_dict)
@@ -92,6 +92,6 @@ class Trainer(object):
       feed_dict = batch.build_feed_dict(fetches)
       global_step, td_errors = session.run(fetches, feed_dict)
 
-    replay_memory.update_priorities(batch.indices, td_errors)
+    batch.update_priorities(td_errors)
 
     return global_step
