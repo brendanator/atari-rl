@@ -70,6 +70,7 @@ flags.DEFINE_integer(
     'target_network_update_period', 10000,
     'The number of parameter updates before the target network is updated')
 flags.DEFINE_string('async', None, 'Async algorithm [one_step|n_step|a3c]')
+flags.DEFINE_float('entropy_beta', 0.01, 'Entropy regularization weight')
 flags.DEFINE_integer(
     'num_threads', 16,
     'Number of asynchronous actor learners to run concurrently')
@@ -117,7 +118,7 @@ def create_config():
   config.exploration_image_shape = eval(str(config.exploration_image_shape))
   config.reward_clipping = config.reward_clipping and not config.reward_scaling
   config.num_actions = Atari.num_actions(config)
-  if not config.bootstrapped: config.num_boostrap_heads = 1
+  if not config.bootstrapped: config.num_bootstrap_heads = 1
 
   if config.async is None:
     config.num_threads = 1

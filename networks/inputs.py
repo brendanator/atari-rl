@@ -10,18 +10,23 @@ class NetworkInputs(object):
       self.frames = tf.placeholder(tf.float32, shape, 'frames')
       self.frames.feed_data = self.batch_frames
 
-      self.action = tf.placeholder(tf.int32, [None], name='action')
-      self.action.feed_data = self.batch_actions
+      # Inputs are expanded to shape [None, 1] to allow broadcasting
+      #   and avoid operations creating shapes like [None, None, ...]
+      action = tf.placeholder(tf.int32, [None], name='action')
+      action.feed_data = self.batch_actions
+      self.action = tf.expand_dims(action, axis=1)
 
-      self.reward = tf.placeholder(tf.float32, [None], name='reward')
-      self.reward.feed_data = self.batch_rewards
+      reward = tf.placeholder(tf.float32, [None], name='reward')
+      reward.feed_data = self.batch_rewards
+      self.reward = tf.expand_dims(reward, axis=1)
 
-      self.alive = tf.placeholder(tf.float32, [None], name='alive')
-      self.alive.feed_data = self.batch_alives
+      alive = tf.placeholder(tf.float32, [None], name='alive')
+      alive.feed_data = self.batch_alives
+      self.alive = tf.expand_dims(alive, axis=1)
 
-      self.total_reward = tf.placeholder(
-          tf.float32, [None], name='total_reward')
-      self.total_reward.feed_data = self.batch_total_rewards
+      total_reward = tf.placeholder(tf.float32, [None], name='total_reward')
+      total_reward.feed_data = self.batch_total_rewards
+      self.total_reward = tf.expand_dims(total_reward, axis=1)
 
   def batch_frames(self, batch):
     return batch.observations(self.t)
@@ -47,9 +52,10 @@ class GlobalInputs(object):
           name='bootstrap_mask')
       self.bootstrap_mask.feed_data = self.batch_bootstrap_mask
 
-      self.importance_sampling = tf.placeholder(tf.float32, [None],
-                                                'importance_sampling')
-      self.importance_sampling.feed_data = self.batch_importance_sampling
+      importance_sampling = tf.placeholder(tf.float32, [None],
+                                           'importance_sampling')
+      importance_sampling.feed_data = self.batch_importance_sampling
+      self.importance_sampling = tf.expand_dims(importance_sampling, axis=1)
 
   def batch_bootstrap_mask(self, batch):
     return batch.bootstrap_mask()

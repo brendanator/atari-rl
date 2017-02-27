@@ -8,27 +8,29 @@ class Losses(object):
     self.build_loss(config)
 
   def build_loss(self, config):
-    # TD-error
-    td_error = self.td_error()
-    square_error = tf.square(td_error)
+    # Basic loss
+    if self.config.n_step:
+      loss = self.n_step_loss()
+    elif self.config.actor_critic:
+      loss = self.actor_critic_loss()
+    else:
+      loss = tf.square(self.td_error())
 
     # Optimality Tightening
     if config.optimality_tightening:
       penalty, error_rescaling = self.optimality_tightening()
-      square_error = (square_error + penalty) / error_rescaling
+      loss = (loss + penalty) / error_rescaling
 
     # Apply bootstrap mask
     if config.bootstrapped and config.bootstrap_mask_probability < 1.0:
-      td_error *= self.bootstrap_mask
-      square_error *= self.bootstrap_mask
+      loss *= self.bootstrap_mask
 
     # Sum bootstrap heads
-    self.td_error = tf.reduce_sum(td_error, axis=1, name='td_error')
-    square_error = tf.reduce_sum(square_error, axis=1, name='square_error')
+    loss = tf.reduce_sum(loss, axis=1, name='square_error')
 
     # Apply importance sampling
-    self.loss = tf.reduce_mean(
-        self.importance_sampling * square_error, name='loss')
+    self.td_error = tf.sqrt(loss, 'td_error')
+    self.loss = tf.reduce_mean(self.importance_sampling * loss, name='loss')
 
     # Clip loss
     if config.loss_clipping > 0:
@@ -37,18 +39,12 @@ class Losses(object):
           tf.minimum(self.loss, config.loss_clipping),
           name='loss')
 
-  def td_error(self, t=0):
-    if self.config.n_step:
-      return self.n_step_loss(t)
-    elif self.config.actor_critic:
-      return self.actor_critic_loss(t)
-    else:
-      target_value = self.target_value(t)
-      taken_action_value = self.policy_network[t].taken_action_value
-      return target_value - taken_action_value
+  def td_error(self):
+    taken_action_value = self.policy_network[0].taken_action_value
+    return tf.square(self.target_value() - taken_action_value)
 
-  def target_value(self, t=0):
-    return self.reward[t] + self.discount * self.value(t + 1)
+  def target_value(self):
+    return self.reward[0] + self.discount * self.value(1)
 
   def value(self, t):
     if self.config.double_q:
@@ -59,16 +55,16 @@ class Losses(object):
     else:
       return self.target_network[t].value
 
-  def persistent_advantage_target(self, t):
-    q_target = self.target_value(t)
+  def persistent_advantage_target(self):
+    target_value = self.target_value()
     alpha = self.config.pal_alpha
-    action = self.action[t]
+    action = self.action[0]
 
-    advantage = self.value(t) - self.target_network[t].action_value(action)
-    advantage_learning = q_target - alpha * advantage
+    advantage = self.value(0) - self.target_network[0].action_value(action)
+    advantage_learning = target_value - alpha * advantage
     next_advantage = (
-        self.value(t + 1) - self.target_network[t + 1].action_value(action))
-    next_advantage_learning = q_target - alpha * next_advantage
+        self.value(1) - self.target_network[1].action_value(action))
+    next_advantage_learning = target_value - alpha * next_advantage
 
     return tf.maximum(
         advantage_learning,
@@ -91,7 +87,9 @@ class Losses(object):
     upper_bound_penalty = tf.square(tf.nn.relu(upper_bound_difference))
 
     # Lower bounds
-    lower_bounds = [self.total_reward[0]]
+    total_reward = tf.tile(
+        self.total_reward[0], multiples=[1, self.config.num_bootstrap_heads])
+    lower_bounds = [total_reward]
     rewards = self.reward[0]
     for t in range(1, self.config.optimality_tightening_steps + 1):
       rewards += self.reward[t] + self.discount**t
@@ -112,41 +110,41 @@ class Losses(object):
 
     return penalty, error_rescaling
 
-  def n_step_loss(self, t):
+  def n_step_loss(self):
     n = self.config.train_period
 
     loss = 0
-    reward = self.policy_network[t + n].value
+    reward = self.policy_network[n].value
 
     for i in range(n - 1, -1, -1):
-      reward = self.reward[t + i] + self.discount * reward
-      value = self.policy_network[t + i].value
+      reward = self.reward[i] + self.discount * reward
+      value = self.policy_network[i].value
       td_error = reward - value
 
       loss += tf.square(td_error)
 
     return loss
 
-  def actor_critic_loss(self, t):
+  def actor_critic_loss(self):
     n = self.config.train_period
     entropy_beta = self.config.entropy_beta
 
     policy_loss, value_loss = 0, 0
-    reward = self.policy_network[t + n].value
+    reward = self.policy_network[n].value
 
     for i in range(n - 1, -1, -1):
-      policy_network = self.policy_network[t + i]
+      policy_network = self.policy_network[i]
 
-      reward = self.reward[t + i] + self.discount * reward
+      reward = self.reward[i] + self.discount * reward
       value = policy_network.value
       td_error = reward - value
-      log_policy = policy_network.log_policy
-      entropy = -tf.reduce_sum(policy_network.policy * log_policy)
+      log_policy = policy_network.log_policy(self.action[i])
 
-      policy_loss += log_policy * td_error + entropy_beta * entropy
+      policy_loss += (log_policy * tf.stop_gradient(td_error) + entropy_beta *
+                      policy_network.entropy)
       value_loss += tf.square(td_error)
 
-    return policy_loss, value_loss
+    return policy_loss + value_loss
 
   def setup_dsl(self, factory, config):
     class ArraySyntax(object):
@@ -158,16 +156,12 @@ class Losses(object):
 
     self.discount = config.discount_rate
 
-    self.reward = ArraySyntax(
-        lambda t: tf.expand_dims(factory.inputs(t).reward, axis=1))
-    self.total_reward = ArraySyntax(lambda t: tf.tile(
-        tf.expand_dims(factory.inputs(t).total_reward, axis=1),
-        multiples=[1, config.num_bootstrap_heads]))
-    self.action = ArraySyntax(
-        lambda t: tf.expand_dims(factory.inputs(t).action, axis=1))
-
     self.policy_network = ArraySyntax(lambda t: factory.policy_network(t))
     self.target_network = ArraySyntax(lambda t: factory.target_network(t))
+
+    self.action = ArraySyntax(lambda t: factory.inputs(t).action)
+    self.reward = ArraySyntax(lambda t: factory.inputs(t).reward)
+    self.total_reward = ArraySyntax(lambda t: factory.inputs(t).total_reward)
 
     self.bootstrap_mask = factory.global_inputs.bootstrap_mask
     self.importance_sampling = factory.global_inputs.importance_sampling

@@ -42,12 +42,12 @@ class ProportionalPriorities(object):
     return self.max_tree[0] or 1  # Default priority if tree is empty
 
   def update_to_highest_priority(self, leaf_index):
-    self.update_scaled(leaf_index, self.max_priority())
+    self.update_scaled_priority(leaf_index, self.max_priority())
 
   def update_priorities(self, indices, priorities):
     priorities = np.absolute(priorities)
     for index, priority in zip(indices, priorities):
-      self.priorities.update_priority(index, priority)
+      self.update_priority(index, priority)
 
   def update_priority(self, leaf_index, priority):
     scaled_priority = priority**self.alpha

@@ -27,8 +27,10 @@ class Agent(object):
     if np.random.rand() < self.epsilon(step):
       return self.atari.sample_action()
     else:
-      return session.run(self.policy_network.choose_action,
-                         {self.policy_network.inputs.frames: [observation]})
+      [action] = session.run(
+          self.policy_network.choose_action,
+          {self.policy_network.inputs.frames: [observation]})
+      return action
 
   def epsilon(self, step):
     """Epsilon is linearly annealed from an initial exploration value

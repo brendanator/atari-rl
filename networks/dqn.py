@@ -9,19 +9,24 @@ class QNetwork(object):
   def __init__(self, scope, inputs, reward_scaling, config, reuse):
     self.scope = scope
     self.inputs = inputs
-    self.num_actions = config.num_actions
+    self.config = config
     self.num_heads = config.num_bootstrap_heads
     self.using_ensemble = config.bootstrap_use_ensemble
 
     with tf.variable_scope(scope, reuse=reuse):
-      conv_output = self.build_conv_layers(inputs, config)
-      self.build_heads(inputs, conv_output, reward_scaling, config)
+      conv_output = self.build_conv_layers(inputs)
+
+      if config.actor_critic:
+        self.build_actor_critic_heads(inputs, conv_output, reward_scaling)
+      else:
+        self.build_action_value_heads(inputs, conv_output, reward_scaling)
+
       if self.using_ensemble:
-        self.build_ensemble(config)
+        self.build_ensemble()
 
     self.sample_head()
 
-  def build_conv_layers(self, inputs, config):
+  def build_conv_layers(self, inputs):
     nhwc = tf.transpose(inputs.frames, [0, 2, 3, 1])
     conv1 = tf.layers.conv2d(
         nhwc, filters=32, kernel_size=[8, 8], strides=[4, 4], name='conv1')
@@ -32,55 +37,74 @@ class QNetwork(object):
     conv_output = tf.reshape(conv3, [-1, 64 * 7 * 7])
 
     # Rescale gradients entering the last convolution layer
-    scale = (1.0 / math.sqrt(2) if config.dueling else 1.0) / self.num_heads
+    dueling_scale = 1.0 / math.sqrt(2) if self.config.dueling else 1.0
+    scale = dueling_scale / self.num_heads
     if scale < 1:
       conv_output = util.scale_gradient(conv_output, scale)
 
     return conv_output
 
-  def build_heads(self, inputs, conv_output, reward_scaling, config):
-    if config.actor_critic:
-      self.heads = [
-          ActorCriticHead('head-%d' % i, inputs, conv_output, reward_scaling,
-                          config) for i in range(self.num_heads)
-      ]
+  def build_action_value_heads(self, inputs, conv_output, reward_scaling):
+    self.heads = [
+        ActionValueHead('head-%d' % i, inputs, conv_output, reward_scaling,
+                        self.config) for i in range(self.num_heads)
+    ]
 
-      self.value = tf.stack([head.value for head in self.heads], axis=1)
-      self.greedy_action = tf.stack(
-          [self.greedy_action for head in self.heads], axis=1)
+    self.action_values = tf.stack(
+        [head.action_values for head in self.heads],
+        axis=1,
+        name='action_values')
 
-    else:
-      self.heads = [
-          ActionValueHead('head-%d' % i, inputs, conv_output, reward_scaling,
-                          config) for i in range(self.num_heads)
-      ]
+    self.taken_action_value = self.action_value(
+        inputs.action, name='taken_action_value')
 
-      self.action_values = tf.stack(
-          [head.action_values for head in self.heads], axis=1)
+    value, greedy_action = tf.nn.top_k(self.action_values, k=1)
+    self.value = tf.squeeze(value, axis=2, name='value')
+    self.greedy_action = tf.squeeze(
+        greedy_action, axis=2, name='greedy_action')
 
-      action_input = tf.expand_dims(inputs.action, axis=1)
-      self.taken_action_value = self.action_value(
-          action_input, name='taken_action_values')
+  def action_value(self, action, name='action_value'):
+    return self.choose_from_actions(self.action_values, action, name)
 
-      value, greedy_action = tf.nn.top_k(self.action_values, k=1)
-      self.value = tf.squeeze(value, axis=2, name='values')
-      self.greedy_action = tf.squeeze(
-          greedy_action, axis=2, name='greedy_actions')
+  def build_actor_critic_heads(self, inputs, conv_output, reward_scaling):
+    self.heads = [
+        ActorCriticHead('head-%d' % i, inputs, conv_output, reward_scaling,
+                        self.config) for i in range(self.num_heads)
+    ]
 
-  def build_ensemble(self, config):
+    self.value = tf.stack(
+        [head.value for head in self.heads], axis=1, name='value')
+    self.greedy_action = tf.stack(
+        [head.greedy_action for head in self.heads],
+        axis=1,
+        name='greedy_action')
+
+    self.policy = tf.stack(
+        [head.policy for head in self.heads], axis=1, name='policy')
+    self._log_policy = tf.stack(
+        [head.log_policy for head in self.heads], axis=1, name='log_policy')
+    self.entropy = tf.reduce_sum(
+        -self.policy * self._log_policy, axis=2, name='entropy')
+
+  def log_policy(self, action, name='log_policy'):
+    return self.choose_from_actions(self._log_policy, action, name)
+
+  def choose_from_actions(self, actions, action, name):
+    return tf.reduce_sum(
+        actions * tf.one_hot(action, self.config.num_actions),
+        axis=2,
+        name=name)
+
+  def build_ensemble(self):
     ensemble_votes = tf.reduce_sum(
-        tf.one_hot(self.greedy_action, config.num_actions), axis=1)
+        tf.one_hot(self.greedy_action, self.config.num_actions), axis=1)
+
     # Add some noise to break ties
-    noise = tf.random_uniform([config.num_actions])
+    noise = tf.random_uniform([self.config.num_actions])
+
     _, ensemble_greedy_action = tf.nn.top_k(ensemble_votes + noise, k=1)
     self.ensemble_greedy_action = tf.squeeze(
         ensemble_greedy_action, axis=1, name='ensemble_greedy_action')
-
-  def action_value(self, action, name=None):
-    return tf.reduce_sum(
-        self.action_values * tf.one_hot(action, self.num_actions),
-        axis=2,
-        name=name)
 
   def sample_head(self):
     self.active_head = self.heads[np.random.randint(self.num_heads)]
@@ -117,9 +141,7 @@ class ActionValueHead(object):
 
       self.action_values = tf.multiply(
           inputs.alive, action_values, name='action_values')
-      self.value = tf.multiply(
-          inputs.alive, tf.squeeze(
-              value, axis=1), name='value')
+      self.value = tf.squeeze(inputs.alive * value, axis=1, name='value')
       self.greedy_action = tf.squeeze(
           greedy_action, axis=1, name='greedy_action')
 
@@ -147,15 +169,21 @@ class ActorCriticHead(object):
       hidden = tf.layers.dense(conv_outputs, 256, tf.nn.relu, name='hidden')
 
       value = tf.layers.dense(hidden, 1)
-      self.value = tf.multiply(
-          inputs.alive, reward_scaling.unnormalize_output(value), name='value')
+      self.value = tf.squeeze(
+          inputs.alive * reward_scaling.unnormalize_output(value),
+          axis=1,
+          name='value')
 
       actions = tf.layers.dense(hidden, config.num_actions, name='actions')
       self.policy = tf.nn.softmax(actions, name='policy')
+      self.log_policy = tf.nn.log_softmax(actions, name='log_policy')
 
       # Sample action from policy
-      self.greedy_action = tf.multinomial(
-          tf.nn.log_softmax(actions), 0, name='greedy_action')
+      self.greedy_action = tf.squeeze(
+          tf.multinomial(
+              self.log_policy, num_samples=1),
+          axis=1,
+          name='greedy_action')
 
 
 class PolicyNetwork(QNetwork):

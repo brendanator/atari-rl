@@ -16,25 +16,25 @@ script:
   - pytest
 
   # Synchronous algorithms
-  - python main.py --replay_start_size 8 --num_steps 8 --summary_step_period 4
-  - python main.py --game air_raid --replay_start_size 8 --num_steps 8 --boostrapped
-  - python main.py --game amidar --replay_start_size 8 --num_steps 8 --dueling
-  - python main.py --game assault --replay_start_size 8 --num_steps 8 --double_q
-  - python main.py --game asterix --replay_start_size 8 --num_steps 8 --exploration_bonus
-  - python main.py --game asteroids --replay_start_size 8 --num_steps 8 --optimality_tightening
-  - python main.py --game atlantis --replay_start_size 8 --num_steps 8 --persistent_advantage_learning
-  - python main.py --game BankHeist --replay_start_size 8 --num_steps 8 --replay_priorities proportional
-  - python main.py --game battle_zone --replay_start_size 8 --num_steps 8 --reward_scaling
-  - python main.py --game beam_rider --replay_start_size 8 --num_steps 8 --sarsa
+  - python main.py --summary_step_period 4 --replay_start_size 8 --num_steps 8 --initial_exploration 0.5
+  - python main.py --boostrapped --game air_raid --replay_start_size 8 --num_steps 8 --initial_exploration 0.5
+  - python main.py --dueling --game amidar --replay_start_size 8 --num_steps 8 --initial_exploration 0.5
+  - python main.py --double_q --game assault --replay_start_size 8 --num_steps 8 --initial_exploration 0.5
+  - python main.py --exploration_bonus --game asterix --replay_start_size 8 --num_steps 8 --initial_exploration 0.5
+  - python main.py --optimality_tightening --game asteroids --replay_start_size 8 --num_steps 8 --initial_exploration 0.5
+  - python main.py --persistent_advantage_learning --game atlantis --replay_start_size 8 --num_steps 8 --initial_exploration 0.5
+  - python main.py --replay_priorities proportional --game BankHeist --replay_start_size 8 --num_steps 8 --initial_exploration 0.5
+  - python main.py --reward_scaling --game battle_zone --replay_start_size 8 --num_steps 8 --initial_exploration 0.5
+  - python main.py --sarsa --game beam_rider --replay_start_size 8 --num_steps 8 --initial_exploration 0.5
 
   # All synchronous algorithms combined
-  - python main.py --game yars_revenge --replay_start_size 8 --num_steps 8 --boostrapped --dueling --double_q --exploration_bonus --optimality_tightening --persistent_advantage_learning --replay_prioritized --reward_scaling
+  - python main.py --boostrapped --dueling --double_q --exploration_bonus --optimality_tightening --persistent_advantage_learning --replay_prioritized --reward_scaling --game yars_revenge --replay_start_size 8 --num_steps 8 --initial_exploration 0.5
 
   # Asynchronous algorithms
-  - python main.py --game Berzerk --num_steps 8 --async one_step
-  - python main.py --game bowling --num_steps 8 --async n_step
-  - python main.py --game boxing --num_steps 8 --async n_step --sarsa
-  - python main.py --game Breakout --num_steps 8 --async a3c
+  - python main.py --async one_step --game Berzerk --num_steps 8 --num_threads 4 --initial_exploration 0.5
+  - python main.py --async n_step --game bowling --num_steps 8 --num_threads 4 --initial_exploration 0.5
+  - python main.py --async n_step --sarsa --game boxing --num_steps 8 --num_threads 4 --initial_exploration 0.5
+  - python main.py --async a3c --game Breakout --num_steps 8 --num_threads 4 --initial_exploration 0.5
 
 notifications:
   email: false
