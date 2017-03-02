@@ -81,6 +81,8 @@ class Trainer(object):
 
   def train_batch(self, session, replay_memory, global_step):
     batch = replay_memory.sample_batch(self.config.batch_size, global_step)
+    if not batch.is_valid:
+      return global_step
 
     if global_step > 0 and global_step % self.config.summary_step_period == 0:
       fetches = [self.global_step, self.train_op, self.summary_op]

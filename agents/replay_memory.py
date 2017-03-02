@@ -83,11 +83,21 @@ class ReplayMemory(object):
   def recent_indices(self, batch_size):
     indices = []
 
+    # Avoid infinite loop from repeated collisions
+    retries = 0
+    max_retries = len(self.input_range) * batch_size
+
     index = self.offset_index(self.cursor, -max(self.input_range) - 1)
-    for i in range(batch_size):
-      while not self.valid_index(index, indices):
-        index = self.offset_index(index, -1)
-      indices.append(index)
+    for _ in range(batch_size):
+      if self.valid_index(index, indices):
+        indices.append(index)
+      else:
+        while retries < max_retries:
+          retries += 1
+          index = self.offset_index(index, -1)
+          if self.valid_index(index, indices):
+            indices.append(index)
+            break
       index = self.offset_index(index, -len(self.input_range))
 
     return np.array(indices)
@@ -95,11 +105,21 @@ class ReplayMemory(object):
   def sample_indices(self, batch_size):
     indices = []
 
-    for i in range(batch_size):
+    # Avoid infinite loop from repeated collisions
+    retries = 0
+    max_retries = batch_size
+
+    for _ in range(batch_size):
       index = self.priorities.sample_index(self.count)
-      while not self.valid_index(index, indices):
-        index = self.priorities.sample_index(self.count)
-      indices.append(index)
+      if self.valid_index(index, indices):
+        indices.append(index)
+      else:
+        while retries < max_retries:
+          retries += 1
+          index = self.priorities.sample_index(self.count)
+          if self.valid_index(index, indices):
+            indices.append(index)
+            break
 
     return np.array(indices)
 
@@ -126,6 +146,7 @@ class SampleBatch(object):
     self.priorities = replay_memory.priorities
     self.indices = indices
     self.step = step
+    self.is_valid = len(indices) > 0
 
   def offset_indices(self, offset):
     return self.replay_memory.offset_index(self.indices, offset)
