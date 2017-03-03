@@ -73,7 +73,7 @@ class Trainer(object):
           start_step = step
 
       # Log episode
-      agent.log_episode()
+      agent.log_episode(self.summary_writer, global_step)
 
   def reset_target_network(self, session, step):
     if self.reset_op and step % self.config.target_network_update_period == 0:

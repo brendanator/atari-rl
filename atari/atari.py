@@ -1,5 +1,6 @@
 import numpy as np
 import re
+import tensorflow as tf
 import time
 import util
 
@@ -63,13 +64,21 @@ class Atari(object):
 
     return self.frames, reward, done
 
-  def log_episode(self):
+  def log_episode(self, summary_writer, global_step):
     duration = time.time() - self.start_time
     steps_per_sec = self.steps / duration
 
     message = 'Episode %d, score %.0f (%d steps, %.2f secs, %.2f steps/sec)'
     util.log(message %
              (self.episode, self.score, self.steps, duration, steps_per_sec))
+
+    summary = tf.Summary()
+    summary.value.add(tag='episode/score', simple_value=self.score)
+    summary.value.add(tag='episode/steps', simple_value=self.steps)
+    summary.value.add(tag='episode/time', simple_value=duration)
+    summary.value.add(tag='episode/reward_per_sec', simple_value=self.score / duration)
+    summary.value.add(tag='episode/steps_per_sec', simple_value=self.steps / duration)
+    summary_writer.add_summary(summary, global_step)
 
   @classmethod
   def create_env(cls, config):

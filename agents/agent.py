@@ -87,5 +87,5 @@ class Agent(object):
 
     self.atari.episode = 0
 
-  def log_episode(self):
-    self.atari.log_episode()
+  def log_episode(self, summary_writer, global_step):
+    self.atari.log_episode(summary_writer, global_step)
