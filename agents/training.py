@@ -13,9 +13,10 @@ class Trainer(object):
 
     # Creating networks
     factory = NetworkFactory(config)
-    self.global_step, self.train_op = factory.create_train_ops()
+    self.global_step, self.agents = factory.create_agents()
     self.reset_op = factory.create_reset_target_network_op()
-    self.agents = factory.create_agents()
+    # if len(self.agents > 1):
+    #  self.train_op = factory.create_shared_train_op()
 
     # Checkpoint/summary
     self.checkpoint_dir = os.path.join(config.train_dir, config.game)
@@ -26,8 +27,11 @@ class Trainer(object):
     util.log('Creating session and loading checkpoint')
     session = tf.train.MonitoredTrainingSession(
         checkpoint_dir=self.checkpoint_dir,
-        save_summaries_steps=0  # Summaries will be saved with train_op only
-    )
+        save_summaries_steps=0,  # Summaries will be saved with train_op only
+        config=tf.ConfigProto(
+            allow_soft_placement=True,
+            # log_device_placement=True
+        ))
 
     with session:
       if len(self.agents) == 1:
@@ -47,6 +51,8 @@ class Trainer(object):
 
     for thread in threads:
       thread.join()
+
+    # TODO shared gradient update
 
   def train_agent(self, session, agent):
     # Populate replay memory
@@ -68,8 +74,7 @@ class Trainer(object):
         observation, _, done = agent.take_action(action)
         step += 1
         if done or (step - start_step == self.config.train_period):
-          global_step = self.train_batch(session, agent.replay_memory,
-                                         global_step)
+          global_step = self.train_batch(session,agent, global_step)
           start_step = step
 
       # Log episode
@@ -79,18 +84,18 @@ class Trainer(object):
     if self.reset_op and step % self.config.target_network_update_period == 0:
       session.run(self.reset_op)
 
-  def train_batch(self, session, replay_memory, global_step):
-    batch = replay_memory.sample_batch(self.config.batch_size, global_step)
+  def train_batch(self, session, agent, global_step):
+    batch = agent.replay_memory.sample_batch(self.config.batch_size, global_step)
     if not batch.is_valid:
       return global_step
 
     if global_step > 0 and global_step % self.config.summary_step_period == 0:
-      fetches = [self.global_step, self.train_op, self.summary_op]
+      fetches = [self.global_step, agent.train_op, self.summary_op]
       feed_dict = batch.build_feed_dict(fetches)
       global_step, td_errors, summary = session.run(fetches, feed_dict)
       self.summary_writer.add_summary(summary, global_step)
     else:
-      fetches = [self.global_step, self.train_op]
+      fetches = [self.global_step, agent.train_op]
       feed_dict = batch.build_feed_dict(fetches)
       global_step, td_errors = session.run(fetches, feed_dict)
 

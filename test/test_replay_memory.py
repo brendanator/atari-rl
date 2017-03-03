@@ -17,9 +17,8 @@ class ReplayMemoryTest(tf.test.TestCase):
         num_bootstrap_heads=1,
         bootstrap_mask_probability=1.0,
         async=None)
-    pre_input_offset = -3
-    post_input_offset = 2
-    memory = ReplayMemory(pre_input_offset, post_input_offset, config)
+    input_offsets = range(-3, 3)
+    memory = ReplayMemory(input_offsets, config)
 
     memory.store_new_episode(0)
     for i in range(1, 10):
@@ -30,7 +29,7 @@ class ReplayMemoryTest(tf.test.TestCase):
     batch = SampleBatch(memory, indices, 0)
     self.assertAllEqual(indices, [8, 3])
 
-    for offset in range(pre_input_offset, post_input_offset):
+    for offset in input_offsets[:-1]:
       self.assertAllEqual(
           batch.observations(offset), indices.reshape([-1, 1]) + offset)
       self.assertAllEqual(batch.actions(offset), indices + offset)
@@ -38,11 +37,11 @@ class ReplayMemoryTest(tf.test.TestCase):
       self.assertAllEqual(batch.alives(offset), [True, True])
 
     # Final offset is a little different
-    offset = post_input_offset
-    self.assertAllEqual(batch.observations(offset), [[10], [5]])
-    self.assertAllEqual(batch.actions(offset), [0, 5])
-    self.assertAllEqual(batch.rewards(offset), [0, 5])
-    self.assertAllEqual(batch.alives(offset), [False, True])
+    final_offset = max(input_offsets)
+    self.assertAllEqual(batch.observations(final_offset), [[10], [5]])
+    self.assertAllEqual(batch.actions(final_offset), [0, 5])
+    self.assertAllEqual(batch.rewards(final_offset), [0, 5])
+    self.assertAllEqual(batch.alives(final_offset), [False, True])
 
     total_reward = sum([
         reward * config.discount_rate**(reward - 3) for reward in range(3, 10)

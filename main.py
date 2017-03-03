@@ -71,6 +71,7 @@ flags.DEFINE_integer(
     'The number of parameter updates before the target network is updated')
 flags.DEFINE_string('async', None, 'Async algorithm [one_step|n_step|a3c]')
 flags.DEFINE_float('entropy_beta', 0.01, 'Entropy regularization weight')
+flags.DEFINE_integer('num_gpus', 0, 'How many GPUs to use')
 flags.DEFINE_integer(
     'num_threads', 16,
     'Number of asynchronous actor learners to run concurrently')

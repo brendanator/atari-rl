@@ -5,9 +5,11 @@ from .replay_priorities import ProportionalPriorities, UniformPriorities
 
 
 class ReplayMemory(object):
-  def __init__(self, pre_input_offset, post_input_offset, config):
+  def __init__(self, input_offsets, config):
     # Input offsets that must be valid. Final offset can be safely ignored
-    self.input_range = np.arange(pre_input_offset, post_input_offset)
+    pre_offset = min(input_offsets)
+    post_offset = max(input_offsets)
+    self.input_range = np.arange(pre_offset, post_offset)
 
     # Config
     self.capacity = config.replay_capacity

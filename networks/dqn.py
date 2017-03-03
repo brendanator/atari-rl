@@ -28,11 +28,11 @@ class QNetwork(object):
 
   def build_conv_layers(self, inputs):
     nhwc = tf.transpose(inputs.frames, [0, 2, 3, 1])
-    conv1 = tf.layers.conv2d(
+    conv1 = util.conv2d(
         nhwc, filters=32, kernel_size=[8, 8], strides=[4, 4], name='conv1')
-    conv2 = tf.layers.conv2d(
+    conv2 = util.conv2d(
         conv1, filters=64, kernel_size=[4, 4], strides=[2, 2], name='conv2')
-    conv3 = tf.layers.conv2d(
+    conv3 = util.conv2d(
         conv2, filters=64, kernel_size=[3, 3], strides=[1, 1], name='conv3')
     conv_output = tf.reshape(conv3, [-1, 64 * 7 * 7])
 
@@ -147,41 +147,39 @@ class ActionValueHead(object):
 
   def action_value_layer(self, conv_outputs, config):
     if config.dueling:
-      hidden_value = tf.layers.dense(
+      hidden_value = util.dense(
           conv_outputs, 256, tf.nn.relu, name='hidden_value')
-      value = tf.layers.dense(hidden_value, 1, name='value')
+      value = util.dense(hidden_value, 1, name='value')
 
-      hidden_actions = tf.layers.dense(
+      hidden_actions = util.dense(
           conv_outputs, 256, tf.nn.relu, name='hidden_actions')
-      actions = tf.layers.dense(
-          hidden_actions, config.num_actions, name='actions')
+      actions = util.dense(hidden_actions, config.num_actions, name='actions')
 
       return value + actions - tf.reduce_mean(actions, axis=1, keep_dims=True)
 
     else:
-      hidden = tf.layers.dense(conv_outputs, 256, tf.nn.relu, name='hidden')
-      return tf.layers.dense(hidden, config.num_actions, name='action_value')
+      hidden = util.dense(conv_outputs, 256, tf.nn.relu, name='hidden')
+      return util.dense(hidden, config.num_actions, name='action_value')
 
 
 class ActorCriticHead(object):
   def __init__(self, name, inputs, conv_outputs, reward_scaling, config):
     with tf.variable_scope(name):
-      hidden = tf.layers.dense(conv_outputs, 256, tf.nn.relu, name='hidden')
+      hidden = util.dense(conv_outputs, 256, tf.nn.relu, name='hidden')
 
-      value = tf.layers.dense(hidden, 1)
+      value = util.dense(hidden, 1, name='value')
       self.value = tf.squeeze(
           inputs.alive * reward_scaling.unnormalize_output(value),
           axis=1,
           name='value')
 
-      actions = tf.layers.dense(hidden, config.num_actions, name='actions')
+      actions = util.dense(hidden, config.num_actions, name='actions')
       self.policy = tf.nn.softmax(actions, name='policy')
       self.log_policy = tf.nn.log_softmax(actions, name='log_policy')
 
       # Sample action from policy
       self.greedy_action = tf.squeeze(
-          tf.multinomial(
-              self.log_policy, num_samples=1),
+          tf.multinomial(self.log_policy, num_samples=1),
           axis=1,
           name='greedy_action')
 

@@ -6,9 +6,10 @@ import util
 
 
 class Agent(object):
-  def __init__(self, policy_network, replay_memory, config):
+  def __init__(self, policy_network, train_op, replay_memory, config):
     self.config = config
     self.policy_network = policy_network
+    self.train_op = train_op
     self.replay_memory = replay_memory
 
     # Create environment

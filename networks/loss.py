@@ -2,9 +2,9 @@ import tensorflow as tf
 
 
 class Losses(object):
-  def __init__(self, factory, config):
+  def __init__(self, factory, scope, config):
     self.config = config
-    self.setup_dsl(factory, config)
+    self.setup_dsl(factory, scope, config)
     self.build_loss(config)
 
   def build_loss(self, config):
@@ -146,7 +146,7 @@ class Losses(object):
 
     return policy_loss + value_loss
 
-  def setup_dsl(self, factory, config):
+  def setup_dsl(self, factory, scope, config):
     class ArraySyntax(object):
       def __init__(self, getitem):
         self.getitem = getitem
@@ -156,12 +156,15 @@ class Losses(object):
 
     self.discount = config.discount_rate
 
-    self.policy_network = ArraySyntax(lambda t: factory.policy_network(t))
-    self.target_network = ArraySyntax(lambda t: factory.target_network(t))
+    self.policy_network = ArraySyntax(
+        lambda t: factory.policy_network(scope, t))
+    self.target_network = ArraySyntax(
+        lambda t: factory.target_network(scope, t))
 
-    self.action = ArraySyntax(lambda t: factory.inputs(t).action)
-    self.reward = ArraySyntax(lambda t: factory.inputs(t).reward)
-    self.total_reward = ArraySyntax(lambda t: factory.inputs(t).total_reward)
+    self.action = ArraySyntax(lambda t: factory.inputs(scope, t).action)
+    self.reward = ArraySyntax(lambda t: factory.inputs(scope, t).reward)
+    self.total_reward = ArraySyntax(
+        lambda t: factory.inputs(scope, t).total_reward)
 
-    self.bootstrap_mask = factory.global_inputs.bootstrap_mask
-    self.importance_sampling = factory.global_inputs.importance_sampling
+    self.bootstrap_mask = factory.global_input(scope).bootstrap_mask
+    self.importance_sampling = factory.global_input(scope).importance_sampling
