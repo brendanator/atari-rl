@@ -6,29 +6,44 @@ python:
   - 3.5
 
 install:
-  - pip install --upgrade pip setuptools wheel
-  - pip install --only-binary=numpy,scipy numpy scipy
-  - pip install tensorflow
-  - pip install -r requirements.txt
+  # Install conda
+  - if [[ "$TRAVIS_PYTHON_VERSION" == "2.7" ]]; then
+      wget https://repo.continuum.io/miniconda/Miniconda2-latest-Linux-x86_64.sh -O miniconda.sh;
+    else
+      wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh;
+    fi
+  - bash miniconda.sh -b -p $HOME/miniconda
+  - export PATH="$HOME/miniconda/bin:$PATH"
+  - hash -r
+  - conda config --set always_yes yes --set changeps1 no
+  - conda update -q conda
+  - conda info -a  # Useful for debugging any issues with conda
+
+  # Install dependencies in conda environment
+  - conda create -q -n atari-rl python=$TRAVIS_PYTHON_VERSION
+  - source activate atari-rl
+  - conda install -y -c https://conda.binstar.org/menpo opencv3
+  - conda install h5py numpy
+  - pip install tensorflow gym[atari]
 
 script:
   # Tests
   - pytest
 
   # Synchronous algorithms
-  - python main.py --summary_step_period 4 --replay_start_size 8 --num_steps 8 --initial_exploration 0.5
-  - python main.py --boostrapped --game air_raid --replay_start_size 8 --num_steps 8 --initial_exploration 0.5
-  - python main.py --dueling --game amidar --replay_start_size 8 --num_steps 8 --initial_exploration 0.5
-  - python main.py --double_q --game assault --replay_start_size 8 --num_steps 8 --initial_exploration 0.5
-  - python main.py --exploration_bonus --game asterix --replay_start_size 8 --num_steps 8 --initial_exploration 0.5
-  - python main.py --optimality_tightening --game asteroids --replay_start_size 8 --num_steps 8 --initial_exploration 0.5
-  - python main.py --persistent_advantage_learning --game atlantis --replay_start_size 8 --num_steps 8 --initial_exploration 0.5
-  - python main.py --replay_priorities proportional --game BankHeist --replay_start_size 8 --num_steps 8 --initial_exploration 0.5
-  - python main.py --reward_scaling --game battle_zone --replay_start_size 8 --num_steps 8 --initial_exploration 0.5
-  - python main.py --sarsa --game beam_rider --replay_start_size 8 --num_steps 8 --initial_exploration 0.5
+  - python main.py --summary_step_period 4 --replay_start_size 8 --replay_capacity 10000 --num_steps 8 --initial_exploration 0.5
+  - python main.py --boostrapped --game air_raid --replay_start_size 8 --replay_capacity 10000 --num_steps 8 --initial_exploration 0.5
+  - python main.py --dueling --game amidar --replay_start_size 8 --replay_capacity 10000 --num_steps 8 --initial_exploration 0.5
+  - python main.py --double_q --game assault --replay_start_size 8 --replay_capacity 10000 --num_steps 8 --initial_exploration 0.5
+  - python main.py --exploration_bonus --game asterix --replay_start_size 8 --replay_capacity 10000 --num_steps 8 --initial_exploration 0.5
+  - python main.py --optimality_tightening --game asteroids --replay_start_size 8 --replay_capacity 10000 --num_steps 8 --initial_exploration 0.5
+  - python main.py --persistent_advantage_learning --game atlantis --replay_start_size 8 --replay_capacity 10000 --num_steps 8 --initial_exploration 0.5
+  - python main.py --replay_priorities proportional --game BankHeist --replay_start_size 8 --replay_capacity 10000 --num_steps 8 --initial_exploration 0.5
+  - python main.py --reward_scaling --game battle_zone --replay_start_size 8 --replay_capacity 10000 --num_steps 8 --initial_exploration 0.5
+  - python main.py --sarsa --game beam_rider --replay_start_size 8 --replay_capacity 10000 --num_steps 8 --initial_exploration 0.5
 
   # All synchronous algorithms combined
-  - python main.py --boostrapped --dueling --double_q --exploration_bonus --optimality_tightening --persistent_advantage_learning --replay_prioritized --reward_scaling --game yars_revenge --replay_start_size 8 --num_steps 8 --initial_exploration 0.5
+  - python main.py --boostrapped --dueling --double_q --exploration_bonus --optimality_tightening --persistent_advantage_learning --replay_prioritized --reward_scaling --game yars_revenge --replay_start_size 8 --replay_capacity 10000 --num_steps 8 --initial_exploration 0.5
 
   # Asynchronous algorithms
   - python main.py --async one_step --game Berzerk --num_steps 8 --num_threads 4 --initial_exploration 0.5

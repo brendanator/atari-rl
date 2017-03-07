@@ -17,15 +17,17 @@ class Trainer(object):
     self.reset_op = factory.create_reset_target_network_op()
     self.agents = factory.create_agents()
 
-    # Checkpoint/summary
-    self.checkpoint_dir = os.path.join(config.train_dir, config.game)
-    self.summary_writer = tf.summary.FileWriter(self.checkpoint_dir)
+    # Summary writer
+    self.summary_writer = tf.summary.FileWriter(config.run_dir)
     self.summary_op = tf.summary.merge_all()
 
   def train(self):
+    self.training = True
+    self.save_replay_memory = True
+
     util.log('Creating session and loading checkpoint')
     session = tf.train.MonitoredTrainingSession(
-        checkpoint_dir=self.checkpoint_dir,
+        checkpoint_dir=self.config.run_dir,
         save_summaries_steps=0  # Summaries will be saved with train_op only
     )
 
@@ -57,7 +59,7 @@ class Trainer(object):
     global_step, start_step, step = 0, 0, 0
 
     util.log('Starting training')
-    while global_step < self.config.num_steps:
+    while self.training and global_step < self.config.num_steps:
       # Start new episode
       observation, _, done = agent.new_game()
 
@@ -75,6 +77,9 @@ class Trainer(object):
       # Log episode
       agent.log_episode(self.summary_writer, global_step)
 
+    if self.save_replay_memory:
+      agent.replay_memory.save()
+
   def reset_target_network(self, session, step):
     if self.reset_op and step % self.config.target_network_update_period == 0:
       session.run(self.reset_op)
@@ -87,13 +92,18 @@ class Trainer(object):
     if global_step > 0 and global_step % self.config.summary_step_period == 0:
       fetches = [self.global_step, self.train_op, self.summary_op]
       feed_dict = batch.build_feed_dict(fetches)
-      global_step, td_errors, summary = session.run(fetches, feed_dict)
+      global_step, priorities, summary = session.run(fetches, feed_dict)
       self.summary_writer.add_summary(summary, global_step)
     else:
       fetches = [self.global_step, self.train_op]
       feed_dict = batch.build_feed_dict(fetches)
-      global_step, td_errors = session.run(fetches, feed_dict)
+      global_step, priorities = session.run(fetches, feed_dict)
 
-    batch.update_priorities(td_errors)
+    batch.update_priorities(priorities)
 
     return global_step
+
+  def stop_training(self, save_replay_memory):
+    util.log('Stopping training')
+    self.training = False
+    self.save_replay_memory = save_replay_memory

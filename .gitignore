@@ -90,3 +90,5 @@ ENV/
 .ropeproject
 
 checkpoints/
+runs/
+*.prof

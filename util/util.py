@@ -1,6 +1,7 @@
+import cv2
 from datetime import datetime
 import numpy as np
-import scipy.misc
+import os
 import tensorflow as tf
 import time
 
@@ -8,17 +9,60 @@ LUMINANCE_RATIOS = [0.2126, 0.7152, 0.0722]
 GRADIENT_SCALING = 'gradient_scaled_by_'
 
 
-def process_image(frame1, frame2, shape):
+def run_directory(config):
+  def find_previous_run(dir):
+    if os.path.isdir(dir):
+      runs = [child[4:] for child in os.listdir(dir) if child[:4] == 'run_']
+      if runs:
+        return max([int(run) for run in runs])
+
+    return 0
+
+  if config.run_dir == 'latest':
+    parent_dir = 'runs/%s/' % config.game
+    previous_run = find_previous_run(parent_dir)
+    run_dir = parent_dir + ('run_%d' % previous_run)
+  elif config.run_dir:
+    run_dir = config.run_dir
+  else:
+    parent_dir = 'runs/%s/' % config.game
+    previous_run = find_previous_run(parent_dir)
+    run_dir = parent_dir + ('run_%d' % (previous_run + 1))
+
+  if run_dir[-1] != '/':
+    run_dir += '/'
+
+  if not os.path.isdir(run_dir):
+    os.makedirs(run_dir)
+
+  log('Checkpoints and summaries will be written to %s' % run_dir)
+
+  return run_dir
+
+
+def process_frame(last_frame, current_frame, shape):
   # Max last 2 frames to remove flicker
-  image = np.stack([frame1, frame2], axis=3).max(axis=3)
+  frame = np.stack([last_frame, current_frame], axis=3).max(axis=3)
 
   # Rescale image
-  image = scipy.misc.imresize(image, shape)
+  frame = cv2.resize(frame, shape)
 
   # Convert to greyscale
-  image = (LUMINANCE_RATIOS * image).sum(axis=2)
+  frame = (LUMINANCE_RATIOS * frame).sum(axis=2)
 
-  return image
+  # Normalize each pixel between 0 and 1
+  frame *= (1 / 255.0)
+
+  return frame
+
+
+def format_offset(prefix, t):
+  if t > 0:
+    return prefix + '_t_plus_' + str(t)
+  elif t == 0:
+    return prefix + 't'
+  else:
+    return prefix + '_t_minus_' + str(-t)
 
 
 def add_loss_summaries(total_loss):

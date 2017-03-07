@@ -14,10 +14,9 @@ class ExplorationBonus(object):
     self.density_model = CTS(context_length=context_length,
                              alphabet=set(range(8)))
 
-  def bonus(self, frames):
+  def bonus(self, observation):
     # Get 8-bit image
-    image = util.process_image(frames[-2], frames[-1], self.image_shape)
-    image = (image // 32).astype(np.uint8)
+    image = (observation[-1] * 8).astype(np.uint8)
 
     # Calculate pseudo count
     prob = self.update_density_model(image)

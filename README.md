@@ -4,12 +4,17 @@
 
 Learning to play Atari in TensorFlow using Deep Reinforcement Learning
 
-## Requirements
-
-- Python 2/3
-- [OpenAI Gym](https://gym.openai.com) with the [Arcade Learning Environment](https://github.com/mgbellemare/Arcade-Learning-Environment) - `pip install -r requirements.txt`
-- [TensorFlow 1.0.0](https://www.tensorflow.org) - `pip install tensorflow`
-- [SkipCTS](https:/github.com/mgbellemare/SkipCTS) - `git submodule update --init`
+## Setup
+```
+git submodule update --init
+conda create --name atari-rl python=3.5
+source activate atari-rl
+conda install -y -c https://conda.binstar.org/menpo opencv3
+conda install -y h5py numpy
+pip install tensorflow
+pip install 'gym[atari]'
+```
+Python 2.7 is also supported
 
 ## Usage
 

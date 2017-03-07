@@ -10,11 +10,14 @@ class Losses(object):
   def build_loss(self, config):
     # Basic loss
     if self.config.n_step:
-      loss = self.n_step_loss()
+      priorities, loss = self.n_step_loss()
     elif self.config.actor_critic:
-      loss = self.actor_critic_loss()
+      priorities, loss = self.actor_critic_loss()
     else:
-      loss = tf.square(self.td_error())
+      priorities, loss = self.one_step_loss()
+
+    # Priorities
+    self.priorities = tf.identity(priorities, name='priorities')
 
     # Optimality Tightening
     if config.optimality_tightening:
@@ -29,47 +32,65 @@ class Losses(object):
     loss = tf.reduce_sum(loss, axis=1, name='square_error')
 
     # Apply importance sampling
-    self.td_error = tf.sqrt(loss, 'td_error')
     self.loss = tf.reduce_mean(self.importance_sampling * loss, name='loss')
 
     # Clip loss
     if config.loss_clipping > 0:
-      self.loss = tf.maximum(
-          -config.loss_clipping,
-          tf.minimum(self.loss, config.loss_clipping),
-          name='loss')
+      with tf.name_scope('clip_loss'):
+        self.loss = tf.maximum(
+            -config.loss_clipping,
+            tf.minimum(self.loss, config.loss_clipping),
+            name='loss')
 
-  def td_error(self):
-    taken_action_value = self.policy_network[0].taken_action_value
-    return tf.square(self.target_value() - taken_action_value)
+  def one_step_loss(self):
+    with tf.name_scope('one_step_loss'):
+      taken_action_value = self.policy_network[0].taken_action_value
 
-  def target_value(self):
-    return self.reward[0] + self.discount * self.value(1)
+      if self.config.persistent_advantage_learning:
+        target_value = self.persistent_advantage_target()
+      else:
+        target_value = self.one_step_target()
+
+      error = target_value - taken_action_value
+      loss = tf.square(error)
+
+      tf.summary.scalar('Q_t', tf.reduce_mean(taken_action_value))
+      tf.summary.scalar('y_t', tf.reduce_mean(target_value))
+
+      return error, loss
+
+  def one_step_target(self):
+    with tf.name_scope('one_step_target'):
+      return self.reward[0] + self.discount * self.value(1)
 
   def value(self, t):
     if self.config.double_q:
-      greedy_action = self.policy_network[t].greedy_action
-      return self.target_network[t].action_value(greedy_action)
+      with tf.name_scope('double_q_value'):
+        greedy_action = tf.stop_gradient(self.policy_network[t].greedy_action)
+        return self.target_network[t].action_value(greedy_action)
     elif self.config.sarsa:
-      return self.target_network[t].taken_action_value
+      with tf.name_scope('sarsa_value'):
+        return self.target_network[t].taken_action_value
     else:
-      return self.target_network[t].value
+      with tf.name_scope('q_value'):
+        return self.target_network[t].value
 
   def persistent_advantage_target(self):
-    target_value = self.target_value()
-    alpha = self.config.pal_alpha
-    action = self.action[0]
+    with tf.name_scope('persistent_advantage_target'):
+      one_step_target = self.one_step_target()
+      alpha = self.config.pal_alpha
+      action = self.action[0]
 
-    advantage = self.value(0) - self.target_network[0].action_value(action)
-    advantage_learning = target_value - alpha * advantage
-    next_advantage = (
-        self.value(1) - self.target_network[1].action_value(action))
-    next_advantage_learning = target_value - alpha * next_advantage
+      with tf.name_scope('advantage_target'):
+        advantage = self.value(0) - self.target_network[0].action_value(action)
+        advantage_target = one_step_target - alpha * advantage
 
-    return tf.maximum(
-        advantage_learning,
-        next_advantage_learning,
-        name='persistent_advantage_learning')
+      with tf.name_scope('next_advantage_target'):
+        next_advantage = (
+            self.value(1) - self.target_network[1].action_value(action))
+        next_advantage_target = one_step_target - alpha * next_advantage
+
+      return tf.maximum(advantage_target, next_advantage_target, name='target')
 
   def optimality_tightening(self):
     # Upper bounds
@@ -123,7 +144,7 @@ class Losses(object):
 
       loss += tf.square(td_error)
 
-    return loss
+    return loss, loss
 
   def actor_critic_loss(self):
     n = self.config.train_period
@@ -144,7 +165,8 @@ class Losses(object):
                       policy_network.entropy)
       value_loss += tf.square(td_error)
 
-    return policy_loss + value_loss
+    loss = policy_loss + value_loss
+    return loss, loss
 
   def setup_dsl(self, factory, config):
     class ArraySyntax(object):

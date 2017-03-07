@@ -1,5 +1,4 @@
 import numpy as np
-import re
 import tensorflow as tf
 import time
 import util
@@ -21,6 +20,7 @@ class Atari(object):
       frameskip = config.frameskip[1]
 
     self.input_frames = config.input_frames
+    self.input_shape = config.input_shape
     self.max_noops = config.max_noops / frameskip
     self.render = config.render
 
@@ -38,31 +38,35 @@ class Atari(object):
     self.steps = 0
     self.score = 0
 
-    frame = self.env.reset()
+    self.last_frame = self.env.reset()
     if self.render: self.env.render()
-    self.frames = [frame]
+    self.frames = []
 
     for i in range(np.random.randint(self.input_frames, self.max_noops + 1)):
       frame, reward_, done, _ = self.env.step(0)
       if self.render: self.env.render()
 
       self.steps += 1
-      self.frames.append(frame)
+      self.frames.append(
+          util.process_frame(self.last_frame, frame, self.input_shape))
+      self.last_frame = frame
       self.score += reward_
 
       if done: self.reset()
 
-    return self.frames, self.score, done
+    return self.frames[-self.input_frames:], self.score, done
 
   def step(self, action):
     frame, reward, done, _ = self.env.step(action)
     if self.render: self.env.render()
 
     self.steps += 1
-    self.frames.append(frame)
+    self.frames.append(
+        util.process_frame(self.last_frame, frame, self.input_shape))
+    self.last_frame = frame
     self.score += reward
 
-    return self.frames, reward, done
+    return self.frames[-self.input_frames:], reward, done
 
   def log_episode(self, summary_writer, global_step):
     duration = time.time() - self.start_time
@@ -76,17 +80,16 @@ class Atari(object):
     summary.value.add(tag='episode/score', simple_value=self.score)
     summary.value.add(tag='episode/steps', simple_value=self.steps)
     summary.value.add(tag='episode/time', simple_value=duration)
-    summary.value.add(tag='episode/reward_per_sec', simple_value=self.score / duration)
-    summary.value.add(tag='episode/steps_per_sec', simple_value=self.steps / duration)
+    summary.value.add(
+        tag='episode/reward_per_sec', simple_value=self.score / duration)
+    summary.value.add(
+        tag='episode/steps_per_sec', simple_value=self.steps / duration)
     summary_writer.add_summary(summary, global_step)
 
   @classmethod
   def create_env(cls, config):
-    game = '_'.join(
-        [g.lower() for g in re.findall('[A-Z]?[a-z]+', config.game)])
-
     return AtariEnv(
-        game=game,
+        game=config.game,
         obs_type='image',
         frameskip=config.frameskip,
         repeat_action_probability=config.repeat_action_probability)

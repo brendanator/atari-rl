@@ -1,5 +1,8 @@
+import h5py
 import numpy as np
 import tensorflow as tf
+import threading
+import util
 
 from .replay_priorities import ProportionalPriorities, UniformPriorities
 
@@ -13,6 +16,7 @@ class ReplayMemory(object):
     self.capacity = config.replay_capacity
     self.discount_rate = config.discount_rate
     self.recent_only = config.async is not None
+    self.run_dir = config.run_dir
 
     # Track position and count in memory
     self.cursor = -1  # Cursor points to index currently being written
@@ -20,9 +24,10 @@ class ReplayMemory(object):
 
     # Store all values in numpy arrays
     self.observations = np.zeros(
-        [config.replay_capacity, config.input_frames] + config.input_shape,
+        [config.replay_capacity, config.input_frames] +
+        list(config.input_shape),
         dtype=np.float32)
-    self.actions = np.zeros([config.replay_capacity], dtype=np.uint8)
+    self.actions = np.zeros([config.replay_capacity], dtype=np.int32)
     self.rewards = np.zeros([config.replay_capacity], dtype=np.float32)
     self.total_rewards = np.zeros([config.replay_capacity], dtype=np.float32)
 
@@ -42,6 +47,35 @@ class ReplayMemory(object):
       self.priorities = ProportionalPriorities(config)
     else:
       raise Exception('Unknown replay_priorities: ' + config.replay_priorities)
+
+  def save(self):
+    name = self.run_dir + 'replay_' + threading.current_thread().name + '.hdf'
+    with h5py.File(name, 'w') as h5f:
+      util.log('Saving replay memory')
+      for key, value in self.__dict__.items():
+        if key == 'priorities':
+          priorities_group = h5f.create_group(key)
+          for p_key, p_value in self.priorities.__dict__.items():
+            priorities_group.create_dataset(p_key, data=p_value)
+        else:
+          h5f.create_dataset(key, data=value)
+
+  def load(self):
+    name = self.run_dir + 'replay_' + threading.current_thread().name + '.hdf'
+    try:
+      with h5py.File(name, 'r') as h5f:
+        util.log('Loading replay memory')
+        for key in self.__dict__.keys():
+          if key == 'priorities':
+            priorities_group = h5f[key]
+            for p_key in self.priorities.__dict__.keys():
+              self.priorities.__dict__[p_key] = h5f[p_key][:]
+              priorities_group.create_dataset(p_key, data=p_value)
+          else:
+            self.__dict__[key] = h5f[key][:]
+      return True
+    except:
+      return False
 
   def store_new_episode(self, observation):
     self.cursor = self.offset_index(self.cursor, 1)
@@ -82,61 +116,57 @@ class ReplayMemory(object):
 
   def recent_indices(self, batch_size):
     indices = []
+    indices_ranges = np.empty(
+        shape=(batch_size, len(self.input_range)), dtype=np.int32)
+    indices_ranges.fill(-1)
 
     # Avoid infinite loop from repeated collisions
-    retries = 0
-    max_retries = len(self.input_range) * batch_size
+    retries, max_retries = 0, len(self.input_range) * batch_size
 
     index = self.offset_index(self.cursor, -max(self.input_range) - 1)
-    for _ in range(batch_size):
-      if self.valid_index(index, indices):
-        indices.append(index)
+    while len(indices) < batch_size and retries < max_retries:
+      if self.update_indices(index, indices, indices_ranges):
+        index = self.offset_index(index, -len(self.input_range))
       else:
-        while retries < max_retries:
-          retries += 1
-          index = self.offset_index(index, -1)
-          if self.valid_index(index, indices):
-            indices.append(index)
-            break
-      index = self.offset_index(index, -len(self.input_range))
+        index = self.offset_index(index, -1)
+        retries += 1
 
     return np.array(indices)
 
   def sample_indices(self, batch_size):
     indices = []
+    indices_ranges = np.empty(
+        shape=(batch_size, len(self.input_range)), dtype=np.int32)
+    indices_ranges.fill(-1)
 
     # Avoid infinite loop from repeated collisions
-    retries = 0
-    max_retries = batch_size
+    retries, max_retries = 0, batch_size
 
-    for _ in range(batch_size):
+    while len(indices) < batch_size and retries < max_retries:
       index = self.priorities.sample_index(self.count)
-      if self.valid_index(index, indices):
-        indices.append(index)
-      else:
-        while retries < max_retries:
-          retries += 1
-          index = self.priorities.sample_index(self.count)
-          if self.valid_index(index, indices):
-            indices.append(index)
-            break
+      if not self.update_indices(index, indices, indices_ranges):
+        retries += 1
 
     return np.array(indices)
 
-  def valid_index(self, index, indices):
-    # Reject indices too close to the cursor or to the start/end of episode
+  def update_indices(self, index, indices, indices_ranges):
+    num = len(indices)
     index_range = self.offset_index(index, self.input_range)
+
+    # Reject indices too close to the cursor or to the start/end of episode
     excludes_cursor = self.cursor not in index_range
     within_episode = self.alives[index_range].all()
     if not (excludes_cursor and within_episode):
       return False
 
     # Reject indices whose range overlaps existing indices ranges
-    index_range = index_range.reshape([1, -1]).transpose()
-    for other in indices:
-      if (index_range == self.offset_index(other, self.input_range)).any():
-        return False
+    transposed_index_range = index_range.reshape([1, 1, -1]).transpose()
+    if (transposed_index_range == indices_ranges[:num]).any():
+      return False
 
+    # Update indices
+    indices.append(index)
+    indices_ranges[num] = index_range
     return True
 
 
@@ -170,8 +200,8 @@ class SampleBatch(object):
     return self.priorities.importance_sampling(
         self.indices, self.replay_memory.count, self.step)
 
-  def update_priorities(self, errors):
-    self.priorities.update_priorities(self.indices, errors)
+  def update_priorities(self, priorites):
+    self.priorities.update_priorities(self.indices, priorites)
 
   def build_feed_dict(self, fetches):
     if not isinstance(fetches, list):

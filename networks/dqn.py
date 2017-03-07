@@ -5,24 +5,23 @@ import tensorflow as tf
 import util
 
 
-class QNetwork(object):
-  def __init__(self, scope, inputs, reward_scaling, config, reuse):
-    self.scope = scope
+class Network(object):
+  def __init__(self, variable_scope, inputs, reward_scaling, config):
+    self.scope = variable_scope
     self.inputs = inputs
     self.config = config
     self.num_heads = config.num_bootstrap_heads
     self.using_ensemble = config.bootstrap_use_ensemble
 
-    with tf.variable_scope(scope, reuse=reuse):
-      conv_output = self.build_conv_layers(inputs)
+    conv_output = self.build_conv_layers(inputs)
 
-      if config.actor_critic:
-        self.build_actor_critic_heads(inputs, conv_output, reward_scaling)
-      else:
-        self.build_action_value_heads(inputs, conv_output, reward_scaling)
+    if config.actor_critic:
+      self.build_actor_critic_heads(inputs, conv_output, reward_scaling)
+    else:
+      self.build_action_value_heads(inputs, conv_output, reward_scaling)
 
-      if self.using_ensemble:
-        self.build_ensemble()
+    if self.using_ensemble:
+      self.build_ensemble()
 
     self.sample_head()
 
@@ -46,7 +45,7 @@ class QNetwork(object):
 
   def build_action_value_heads(self, inputs, conv_output, reward_scaling):
     self.heads = [
-        ActionValueHead('head-%d' % i, inputs, conv_output, reward_scaling,
+        ActionValueHead('head%d' % i, inputs, conv_output, reward_scaling,
                         self.config) for i in range(self.num_heads)
     ]
 
@@ -64,11 +63,12 @@ class QNetwork(object):
         greedy_action, axis=2, name='greedy_action')
 
   def action_value(self, action, name='action_value'):
-    return self.choose_from_actions(self.action_values, action, name)
+    with tf.name_scope(name):
+      return self.choose_from_actions(self.action_values, action)
 
   def build_actor_critic_heads(self, inputs, conv_output, reward_scaling):
     self.heads = [
-        ActorCriticHead('head-%d' % i, inputs, conv_output, reward_scaling,
+        ActorCriticHead('head%d' % i, inputs, conv_output, reward_scaling,
                         self.config) for i in range(self.num_heads)
     ]
 
@@ -87,13 +87,12 @@ class QNetwork(object):
         -self.policy * self._log_policy, axis=2, name='entropy')
 
   def log_policy(self, action, name='log_policy'):
-    return self.choose_from_actions(self._log_policy, action, name)
+    with tf.name_scope(name):
+      return self.choose_from_actions(self._log_policy, action)
 
-  def choose_from_actions(self, actions, action, name):
+  def choose_from_actions(self, actions, action):
     return tf.reduce_sum(
-        actions * tf.one_hot(action, self.config.num_actions),
-        axis=2,
-        name=name)
+        actions * tf.one_hot(action, self.config.num_actions), axis=2)
 
   def build_ensemble(self):
     ensemble_votes = tf.reduce_sum(
@@ -118,18 +117,7 @@ class QNetwork(object):
 
   @property
   def variables(self):
-    return tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope)
-
-  def copy_to_network(self, to_network):
-    """Copy the tensor variables values between the two scopes"""
-
-    operations = []
-
-    for from_var, to_var in zip(self.variables, to_network.variables):
-      operations.append(to_var.assign(from_var).op)
-
-    with tf.control_dependencies(operations):
-      return tf.no_op(name='copy_q_network')
+    return tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope.name)
 
 
 class ActionValueHead(object):
@@ -180,19 +168,6 @@ class ActorCriticHead(object):
 
       # Sample action from policy
       self.greedy_action = tf.squeeze(
-          tf.multinomial(
-              self.log_policy, num_samples=1),
+          tf.multinomial(self.log_policy, num_samples=1),
           axis=1,
           name='greedy_action')
-
-
-class PolicyNetwork(QNetwork):
-  def __init__(self, inputs, reward_scaling, config, reuse):
-    super(PolicyNetwork, self).__init__('policy', inputs, reward_scaling,
-                                        config, reuse)
-
-
-class TargetNetwork(QNetwork):
-  def __init__(self, inputs, reward_scaling, config, reuse):
-    super(TargetNetwork, self).__init__('target', inputs, reward_scaling,
-                                        config, reuse)

@@ -1,6 +1,10 @@
 from agents import Trainer
 from atari import Atari
+import re
+import signal
+from sys import stdin
 import tensorflow as tf
+import util
 
 flags = tf.app.flags
 
@@ -12,7 +16,7 @@ flags.DEFINE_string('frameskip', 4, 'Number of frames to repeat actions for. '
 flags.DEFINE_float(
     'repeat_action_probability', 0.25,
     'Probability of ignoring the agent action and repeat last action')
-flags.DEFINE_string('input_shape', [84, 84], 'Rescale input to this shape')
+flags.DEFINE_string('input_shape', (84, 84), 'Rescale input to this shape')
 flags.DEFINE_integer('input_frames', 4, 'Number of frames to input')
 flags.DEFINE_integer(
     'max_noops', 30,
@@ -29,7 +33,7 @@ flags.DEFINE_float('bootstrap_mask_probability', 1.0,
 flags.DEFINE_bool(
     'bootstrap_use_ensemble', False,
     'Choose action with most bootstrap heads votes. Use only in evaluation')
-flags.DEFINE_integer('replay_capacity', 100000, 'Size of replay memory')
+flags.DEFINE_integer('replay_capacity', 1000000, 'Size of replay memory')
 flags.DEFINE_integer(
     'replay_start_size', 50000,
     'Pre-populate the replay memory with this number of random actions')
@@ -60,7 +64,7 @@ flags.DEFINE_bool('exploration_bonus', False,
                   'Enable pseudo-count based exploration bonus')
 flags.DEFINE_float('exploration_beta', 0.05,
                    'Value to scale the exploration bonus by')
-flags.DEFINE_string('exploration_image_shape', [42, 42],
+flags.DEFINE_string('exploration_image_shape', (42, 42),
                     'Shape of image to use with CTS in exploration bonus')
 
 # Training
@@ -84,7 +88,7 @@ flags.DEFINE_float('initial_exploration', 1.0,
 flags.DEFINE_float('final_exploration', 0.1,
                    'Final value of epsilon is epsilon-greedy exploration')
 flags.DEFINE_integer(
-    'final_exploration_frame', 1000000,
+    'final_exploration_frame', 10000000,
     'The number of frames over to anneal epsilon to its final value')
 
 # Clipping
@@ -97,27 +101,50 @@ flags.DEFINE_float('grad_clipping', 10.0,
                    'Range around zero to limit gradients to. 0 to disable')
 
 # Checkpoints/summaries
-flags.DEFINE_string('train_dir', 'checkpoints',
-                    'Directory to write checkpoints')
+flags.DEFINE_string(
+    'run_dir', None, 'Directory to read/write checkpoints/summaries to. '
+    'Defaults to runs/<game>/run_<counter>. Use "latest" to continue previous run'
+)
 flags.DEFINE_integer('summary_step_period', 100,
                      'How many training steps between writing summaries')
 
 # Render
 flags.DEFINE_bool('render', False, 'Show game during training')
 
+# Profiling
+flags.DEFINE_bool('profile', False, 'Enable profiling')
+
 
 def main(_):
-  trainer = Trainer(create_config())
-  trainer.train()
+  config = create_config()
+  trainer = Trainer(config)
+
+  # Register signal handler
+  def stop_training(signum, frame):
+    print('Do you want to save replay memory? [y/N]')
+    save_replay_memory = stdin.readline() == 'y'
+    trainer.stop_training(save_replay_memory)
+
+  signal.signal(signal.SIGINT, stop_training)
+
+  if config.profile:
+    import cProfile as profile
+    profile.runctx('trainer.train()', globals(), locals(), 'main.prof')
+  else:
+    trainer.train()
 
 
 def create_config():
   config = flags.FLAGS
+  config.game = '_'.join(
+      [g.lower() for g in re.findall('[A-Z]?[a-z]+', config.game)])
+  config.num_actions = Atari.num_actions(config)
   config.frameskip = eval(str(config.frameskip))
   config.input_shape = eval(str(config.input_shape))
   config.exploration_image_shape = eval(str(config.exploration_image_shape))
   config.reward_clipping = config.reward_clipping and not config.reward_scaling
-  config.num_actions = Atari.num_actions(config)
+  config.run_dir = util.run_directory(config)
+
   if not config.bootstrapped: config.num_bootstrap_heads = 1
 
   if config.async is None:

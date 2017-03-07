@@ -16,6 +16,7 @@ class ReplayMemoryTest(tf.test.TestCase):
         replay_priorities='uniform',
         num_bootstrap_heads=1,
         bootstrap_mask_probability=1.0,
+        run_dir='',
         async=None)
     pre_input_offset = -3
     post_input_offset = 2

@@ -2,7 +2,6 @@ import numpy as np
 
 from atari import Atari
 from agents.exploration_bonus import ExplorationBonus
-import util
 
 
 class Agent(object):
@@ -17,8 +16,7 @@ class Agent(object):
 
   def new_game(self):
     self.policy_network.sample_head()
-    frames, reward, done = self.atari.reset()
-    observation = self.process_frames(frames)
+    observation, reward, done = self.atari.reset()
     self.replay_memory.store_new_episode(observation)
     return observation, reward, done
 
@@ -45,24 +43,14 @@ class Agent(object):
     return max(annealed_exploration, final)
 
   def take_action(self, action):
-    frames, reward, done = self.atari.step(action)
-    training_reward = self.process_reward(reward, frames)
-    observation = self.process_frames(frames)
+    observation, reward, done = self.atari.step(action)
+    training_reward = self.process_reward(reward, observation)
 
     # Store action, reward and done with the next observation
     self.replay_memory.store_transition(action, training_reward, done,
                                         observation)
 
     return observation, reward, done
-
-  def process_frames(self, frames):
-    observation = []
-    for i in range(-self.config.input_frames, 0):
-      image = util.process_image(frames[i - 1], frames[i],
-                                 self.config.input_shape)
-      image /= 255.0  # Normalize each pixel between 0 and 1
-      observation.append(image)
-    return observation
 
   def process_reward(self, reward, frames):
     if self.config.exploration_bonus:
@@ -76,6 +64,10 @@ class Agent(object):
 
   def populate_replay_memory(self):
     """Play game with random actions to populate the replay memory"""
+
+    # Try loading memory from disk
+    if self.replay_memory.load():
+      return
 
     count = 0
     done = True
