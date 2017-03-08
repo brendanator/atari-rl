@@ -15,6 +15,7 @@ class ReplayMemory(object):
     # Config
     self.capacity = config.replay_capacity
     self.discount_rate = config.discount_rate
+    self.frame_offsets = np.arange(1 - config.input_frames, 1)
     self.recent_only = config.async is not None
     self.run_dir = config.run_dir
 
@@ -23,10 +24,8 @@ class ReplayMemory(object):
     self.count = 0
 
     # Store all values in numpy arrays
-    self.observations = np.zeros(
-        [config.replay_capacity, config.input_frames] +
-        list(config.input_shape),
-        dtype=np.float32)
+    self.frames = np.zeros(
+        [config.replay_capacity] + list(config.input_shape), dtype=np.uint8)
     self.actions = np.zeros([config.replay_capacity], dtype=np.int32)
     self.rewards = np.zeros([config.replay_capacity], dtype=np.float32)
     self.total_rewards = np.zeros([config.replay_capacity], dtype=np.float32)
@@ -51,7 +50,6 @@ class ReplayMemory(object):
   def save(self):
     name = self.run_dir + 'replay_' + threading.current_thread().name + '.hdf'
     with h5py.File(name, 'w') as h5f:
-      util.log('Saving replay memory')
       for key, value in self.__dict__.items():
         if key == 'priorities':
           priorities_group = h5f.create_group(key)
@@ -62,26 +60,22 @@ class ReplayMemory(object):
 
   def load(self):
     name = self.run_dir + 'replay_' + threading.current_thread().name + '.hdf'
-    try:
-      with h5py.File(name, 'r') as h5f:
-        util.log('Loading replay memory')
-        for key in self.__dict__.keys():
-          if key == 'priorities':
-            priorities_group = h5f[key]
-            for p_key in self.priorities.__dict__.keys():
-              self.priorities.__dict__[p_key] = h5f[p_key][:]
-              priorities_group.create_dataset(p_key, data=p_value)
-          else:
-            self.__dict__[key] = h5f[key][:]
-      return True
-    except:
-      return False
+    with h5py.File(name, 'r') as h5f:
+      for key in self.__dict__.keys():
+        if key == 'priorities':
+          priorities_group = h5f[key]
+          for p_key in self.priorities.__dict__.keys():
+            self.priorities.__dict__[p_key] = h5f[p_key][()]
+            priorities_group.create_dataset(p_key, data=p_value)
+        else:
+          self.__dict__[key] = h5f[key][()]
 
   def store_new_episode(self, observation):
-    self.cursor = self.offset_index(self.cursor, 1)
-    self.count = min(self.count + 1, self.capacity)
-    self.observations[self.cursor] = observation
-    self.alives[self.cursor] = True
+    for frame in observation:
+      self.cursor = self.offset_index(self.cursor, 1)
+      self.count = min(self.count + 1, self.capacity)
+      self.frames[self.cursor] = frame
+      self.alives[self.cursor] = True
 
   def store_transition(self, action, reward, done, next_observation):
     self.actions[self.cursor] = action
@@ -93,7 +87,7 @@ class ReplayMemory(object):
     self.count = min(self.count + 1, self.capacity)
 
     self.alives[self.cursor] = not done
-    self.observations[self.cursor] = next_observation
+    self.frames[self.cursor] = next_observation[-1]
 
     if done:
       # Update total_rewards for episode
@@ -112,7 +106,7 @@ class ReplayMemory(object):
     else:
       indices = self.sample_indices(batch_size)
 
-    return SampleBatch(self, indices, step)
+    return SampleBatch(self, indices, self.frame_offsets, step)
 
   def recent_indices(self, batch_size):
     indices = []
@@ -154,8 +148,9 @@ class ReplayMemory(object):
     index_range = self.offset_index(index, self.input_range)
 
     # Reject indices too close to the cursor or to the start/end of episode
-    excludes_cursor = self.cursor not in index_range
-    within_episode = self.alives[index_range].all()
+    frames_index_range = index_range.reshape(-1, 1) + self.frame_offsets
+    excludes_cursor = self.cursor not in frames_index_range
+    within_episode = self.alives[frames_index_range].all()
     if not (excludes_cursor and within_episode):
       return False
 
@@ -171,18 +166,21 @@ class ReplayMemory(object):
 
 
 class SampleBatch(object):
-  def __init__(self, replay_memory, indices, step):
+  def __init__(self, replay_memory, indices, frame_offsets, step):
     self.replay_memory = replay_memory
     self.priorities = replay_memory.priorities
     self.indices = indices
     self.step = step
     self.is_valid = len(indices) > 0
+    self.frame_offsets = frame_offsets
 
   def offset_indices(self, offset):
     return self.replay_memory.offset_index(self.indices, offset)
 
-  def observations(self, offset):
-    return self.replay_memory.observations[self.offset_indices(offset)]
+  def frames(self, offset):
+    offsets = self.offset_indices(offset)
+    offsets = offsets.reshape(-1, 1) + self.frame_offsets
+    return self.replay_memory.frames[offsets]
 
   def actions(self, offset):
     return self.replay_memory.actions[self.offset_indices(offset)]

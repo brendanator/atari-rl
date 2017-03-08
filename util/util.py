@@ -48,10 +48,7 @@ def process_frame(last_frame, current_frame, shape):
   frame = cv2.resize(frame, shape)
 
   # Convert to greyscale
-  frame = (LUMINANCE_RATIOS * frame).sum(axis=2)
-
-  # Normalize each pixel between 0 and 1
-  frame *= (1 / 255.0)
+  frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
 
   return frame
 
@@ -60,7 +57,7 @@ def format_offset(prefix, t):
   if t > 0:
     return prefix + '_t_plus_' + str(t)
   elif t == 0:
-    return prefix + 't'
+    return prefix + '_t'
   else:
     return prefix + '_t_minus_' + str(-t)
 

@@ -14,6 +14,7 @@ class NetworkFactory(object):
     self.replay_inputs = {}
     self.policy_nets = {}
     self.target_nets = {}
+    self.summaries = util.Summaries(config.run_dir)
 
     with tf.variable_scope('policy_variables') as self.policy_scope:
       pass
@@ -68,7 +69,7 @@ class NetworkFactory(object):
       pre_offset = min(self.replay_inputs.keys())
       post_offset = max(self.replay_inputs.keys())
       memory = ReplayMemory(pre_offset, post_offset, self.config)
-      agent = Agent(self.policy_network(), memory, self.config)
+      agent = Agent(self.policy_network(), memory, self.summaries, self.config)
       agents.append(agent)
 
     return agents
@@ -76,7 +77,7 @@ class NetworkFactory(object):
   def create_train_ops(self):
     # Optimizer
     optimizer = tf.train.RMSPropOptimizer(
-        learning_rate=0.00025, momentum=0.95, epsilon=0.01)
+        learning_rate=0.0025, momentum=0.95, epsilon=0.0001)
 
     # Create loss
     losses = loss.Losses(self, self.config)
@@ -103,11 +104,11 @@ class NetworkFactory(object):
     with tf.control_dependencies([minimize]):
       train_op = tf.identity(losses.priorities, name='train')
 
-    self.create_summaries(losses.loss, trainable_vars, grads)
+    self.create_summary_ops(losses.loss, trainable_vars, grads)
 
     return global_step, train_op
 
-  def create_summaries(self, loss, variables, gradients):
+  def create_summary_ops(self, loss, variables, gradients):
     tf.summary.scalar('loss', loss)
 
     for var in variables:
@@ -116,6 +117,11 @@ class NetworkFactory(object):
     for grad, var in gradients:
       if grad is not None:
         tf.summary.histogram('gradient', grad)
+
+    self.summaries.create_summary_op()
+
+  def create_summaries(self):
+    return self.summaries
 
   def create_reset_target_network_op(self):
     if self.policy_nets and self.target_nets:

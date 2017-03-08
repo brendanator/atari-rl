@@ -28,11 +28,26 @@ class Network(object):
   def build_conv_layers(self, inputs):
     nhwc = tf.transpose(inputs.frames, [0, 2, 3, 1])
     conv1 = tf.layers.conv2d(
-        nhwc, filters=32, kernel_size=[8, 8], strides=[4, 4], name='conv1')
+        nhwc,
+        filters=32,
+        kernel_size=[8, 8],
+        strides=[4, 4],
+        activation=tf.nn.relu,
+        name='conv1')
     conv2 = tf.layers.conv2d(
-        conv1, filters=64, kernel_size=[4, 4], strides=[2, 2], name='conv2')
+        conv1,
+        filters=64,
+        kernel_size=[4, 4],
+        strides=[2, 2],
+        activation=tf.nn.relu,
+        name='conv2')
     conv3 = tf.layers.conv2d(
-        conv2, filters=64, kernel_size=[3, 3], strides=[1, 1], name='conv3')
+        conv2,
+        filters=64,
+        kernel_size=[3, 3],
+        strides=[1, 1],
+        activation=tf.nn.relu,
+        name='conv3')
     conv_output = tf.reshape(conv3, [-1, 64 * 7 * 7])
 
     # Rescale gradients entering the last convolution layer

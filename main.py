@@ -64,8 +64,8 @@ flags.DEFINE_bool('exploration_bonus', False,
                   'Enable pseudo-count based exploration bonus')
 flags.DEFINE_float('exploration_beta', 0.05,
                    'Value to scale the exploration bonus by')
-flags.DEFINE_string('exploration_image_shape', (42, 42),
-                    'Shape of image to use with CTS in exploration bonus')
+flags.DEFINE_string('exploration_frame_shape', (42, 42),
+                    'Shape of frame to use with CTS in exploration bonus')
 
 # Training
 flags.DEFINE_integer('batch_size', 32, 'Batch size. Ignored for async')
@@ -85,10 +85,10 @@ flags.DEFINE_float('discount_rate', 0.99, 'Discount rate for future rewards')
 # Exploration
 flags.DEFINE_float('initial_exploration', 1.0,
                    'Initial value of epsilon is epsilon-greedy exploration')
-flags.DEFINE_float('final_exploration', 0.1,
+flags.DEFINE_float('final_exploration', 0.01,
                    'Final value of epsilon is epsilon-greedy exploration')
 flags.DEFINE_integer(
-    'final_exploration_frame', 10000000,
+    'final_exploration_frame', 1000000,
     'The number of frames over to anneal epsilon to its final value')
 
 # Clipping
@@ -105,6 +105,8 @@ flags.DEFINE_string(
     'run_dir', None, 'Directory to read/write checkpoints/summaries to. '
     'Defaults to runs/<game>/run_<counter>. Use "latest" to continue previous run'
 )
+flags.DEFINE_bool('save_replay_memory', False, 'Save replay memory on exit')
+flags.DEFINE_bool('load_replay_memory', False, 'Load replay memory on startup')
 flags.DEFINE_integer('summary_step_period', 100,
                      'How many training steps between writing summaries')
 
@@ -121,9 +123,7 @@ def main(_):
 
   # Register signal handler
   def stop_training(signum, frame):
-    print('Do you want to save replay memory? [y/N]')
-    save_replay_memory = stdin.readline() == 'y'
-    trainer.stop_training(save_replay_memory)
+    trainer.stop_training()
 
   signal.signal(signal.SIGINT, stop_training)
 
@@ -141,7 +141,7 @@ def create_config():
   config.num_actions = Atari.num_actions(config)
   config.frameskip = eval(str(config.frameskip))
   config.input_shape = eval(str(config.input_shape))
-  config.exploration_image_shape = eval(str(config.exploration_image_shape))
+  config.exploration_frame_shape = eval(str(config.exploration_frame_shape))
   config.reward_clipping = config.reward_clipping and not config.reward_scaling
   config.run_dir = util.run_directory(config)
 

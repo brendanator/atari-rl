@@ -8,8 +8,9 @@ class ReplayInputs(object):
 
     with tf.name_scope(util.format_offset('replay', t)):
       shape = [None, config.input_frames] + list(config.input_shape)
-      self.frames = tf.placeholder(tf.float32, shape, 'frames')
-      self.frames.feed_data = self.batch_frames
+      frames = tf.placeholder(tf.uint8, shape, 'frames')
+      frames.feed_data = self.batch_frames
+      self.frames = tf.to_float(frames) / 255.0
 
       # Inputs are expanded to shape [None, 1] to allow broadcasting
       #   and avoid operations creating shapes like [None, None, ...]
@@ -31,7 +32,7 @@ class ReplayInputs(object):
           total_reward, axis=1, name='total_reward')
 
   def batch_frames(self, batch):
-    return batch.observations(self.t)
+    return batch.frames(self.t)
 
   def batch_actions(self, batch):
     return batch.actions(self.t)

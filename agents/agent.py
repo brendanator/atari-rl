@@ -5,13 +5,14 @@ from agents.exploration_bonus import ExplorationBonus
 
 
 class Agent(object):
-  def __init__(self, policy_network, replay_memory, config):
+  def __init__(self, policy_network, replay_memory, summaries, config):
     self.config = config
     self.policy_network = policy_network
     self.replay_memory = replay_memory
+    self.summaries = summaries
 
     # Create environment
-    self.atari = Atari(config)
+    self.atari = Atari(summaries, config)
     self.exploration_bonus = ExplorationBonus(config)
 
   def new_game(self):
@@ -40,7 +41,11 @@ class Agent(object):
 
     annealing_rate = (initial - final) / final_frame
     annealed_exploration = initial - (step * annealing_rate)
-    return max(annealed_exploration, final)
+    epsilon = max(annealed_exploration, final)
+
+    self.summaries.epsilon(step, epsilon)
+
+    return epsilon
 
   def take_action(self, action):
     observation, reward, done = self.atari.step(action)
@@ -65,10 +70,6 @@ class Agent(object):
   def populate_replay_memory(self):
     """Play game with random actions to populate the replay memory"""
 
-    # Try loading memory from disk
-    if self.replay_memory.load():
-      return
-
     count = 0
     done = True
 
@@ -79,5 +80,5 @@ class Agent(object):
 
     self.atari.episode = 0
 
-  def log_episode(self, summary_writer, global_step):
-    self.atari.log_episode(summary_writer, global_step)
+  def log_episode(self, step):
+    self.atari.log_episode(step)

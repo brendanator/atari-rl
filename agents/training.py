@@ -16,14 +16,10 @@ class Trainer(object):
     self.global_step, self.train_op = factory.create_train_ops()
     self.reset_op = factory.create_reset_target_network_op()
     self.agents = factory.create_agents()
-
-    # Summary writer
-    self.summary_writer = tf.summary.FileWriter(config.run_dir)
-    self.summary_op = tf.summary.merge_all()
+    self.summaries = factory.create_summaries()
 
   def train(self):
     self.training = True
-    self.save_replay_memory = True
 
     util.log('Creating session and loading checkpoint')
     session = tf.train.MonitoredTrainingSession(
@@ -52,14 +48,18 @@ class Trainer(object):
 
   def train_agent(self, session, agent):
     # Populate replay memory
-    util.log('Populating replay memory')
-    agent.populate_replay_memory()
+    if self.config.load_replay_memory:
+      util.log('Loading replay memory')
+      agent.replay_memory.load()
+    else:
+      util.log('Populating replay memory')
+      agent.populate_replay_memory()
 
     # Initialize step counters
-    global_step, start_step, step = 0, 0, 0
+    step, steps_until_train = 0, self.config.train_period
 
     util.log('Starting training')
-    while self.training and global_step < self.config.num_steps:
+    while self.training and step < self.config.num_steps:
       # Start new episode
       observation, _, done = agent.new_game()
 
@@ -69,41 +69,40 @@ class Trainer(object):
         action = agent.action(session, step, observation)
         observation, _, done = agent.take_action(action)
         step += 1
-        if done or (step - start_step == self.config.train_period):
-          global_step = self.train_batch(session, agent.replay_memory,
-                                         global_step)
-          start_step = step
+        steps_until_train -= 1
+        if done or (steps_until_train == 0):
+          step = self.train_batch(session, agent.replay_memory, step)
+          steps_until_train = self.config.train_period
 
       # Log episode
-      agent.log_episode(self.summary_writer, global_step)
+      agent.log_episode(step)
 
-    if self.save_replay_memory:
+    if self.config.save_replay_memory:
       agent.replay_memory.save()
 
   def reset_target_network(self, session, step):
     if self.reset_op and step % self.config.target_network_update_period == 0:
       session.run(self.reset_op)
 
-  def train_batch(self, session, replay_memory, global_step):
-    batch = replay_memory.sample_batch(self.config.batch_size, global_step)
+  def train_batch(self, session, replay_memory, step):
+    batch = replay_memory.sample_batch(self.config.batch_size, step)
     if not batch.is_valid:
-      return global_step
+      return step
 
-    if global_step > 0 and global_step % self.config.summary_step_period == 0:
-      fetches = [self.global_step, self.train_op, self.summary_op]
+    if step > 0 and step % self.config.summary_step_period == 0:
+      fetches = [self.global_step, self.train_op, self.summaries.summary_op]
       feed_dict = batch.build_feed_dict(fetches)
-      global_step, priorities, summary = session.run(fetches, feed_dict)
-      self.summary_writer.add_summary(summary, global_step)
+      step, priorities, summary = session.run(fetches, feed_dict)
+      self.summaries.add_summary(summary, step)
     else:
       fetches = [self.global_step, self.train_op]
       feed_dict = batch.build_feed_dict(fetches)
-      global_step, priorities = session.run(fetches, feed_dict)
+      step, priorities = session.run(fetches, feed_dict)
 
     batch.update_priorities(priorities)
 
-    return global_step
+    return step
 
-  def stop_training(self, save_replay_memory):
+  def stop_training(self):
     util.log('Stopping training')
     self.training = False
-    self.save_replay_memory = save_replay_memory

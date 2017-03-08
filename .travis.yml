@@ -28,11 +28,15 @@ install:
 
 script:
   # Tests
-  - pytest
+  - python -m test.test_replay_memory
+  - python -m test.test_replay_priorities
+
+  # Summaries and saving/loading replay memory
+  - python main.py --save_replay_memory --run_dir runs/test_run_dir --summary_step_period 4 --replay_start_size 8 --replay_capacity 10000 --num_steps 8 --initial_exploration 0.5
+  - python main.py --load_replay_memory --run_dir runs/test_run_dir --summary_step_period 4 --replay_start_size 8 --replay_capacity 10000 --num_steps 8 --initial_exploration 0.5
+  - python main.py --boostrapped --game air_raid --replay_start_size 8 --replay_capacity 10000 --num_steps 8 --initial_exploration 0.5
 
   # Synchronous algorithms
-  - python main.py --summary_step_period 4 --replay_start_size 8 --replay_capacity 10000 --num_steps 8 --initial_exploration 0.5
-  - python main.py --boostrapped --game air_raid --replay_start_size 8 --replay_capacity 10000 --num_steps 8 --initial_exploration 0.5
   - python main.py --dueling --game amidar --replay_start_size 8 --replay_capacity 10000 --num_steps 8 --initial_exploration 0.5
   - python main.py --double_q --game assault --replay_start_size 8 --replay_capacity 10000 --num_steps 8 --initial_exploration 0.5
   - python main.py --exploration_bonus --game asterix --replay_start_size 8 --replay_capacity 10000 --num_steps 8 --initial_exploration 0.5

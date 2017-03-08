@@ -1,5 +1,4 @@
 import numpy as np
-import tensorflow as tf
 import time
 import util
 
@@ -7,7 +6,9 @@ from gym.envs.atari.atari_env import AtariEnv
 
 
 class Atari(object):
-  def __init__(self, config):
+  def __init__(self, summaries, config):
+    self.summaries = summaries
+
     util.log('Starting %s {frameskip: %s, repeat_action_probability: %s}' %
              (config.game, str(config.frameskip),
               str(config.repeat_action_probability)))
@@ -68,7 +69,7 @@ class Atari(object):
 
     return self.frames[-self.input_frames:], reward, done
 
-  def log_episode(self, summary_writer, global_step):
+  def log_episode(self, step):
     duration = time.time() - self.start_time
     steps_per_sec = self.steps / duration
 
@@ -76,15 +77,7 @@ class Atari(object):
     util.log(message %
              (self.episode, self.score, self.steps, duration, steps_per_sec))
 
-    summary = tf.Summary()
-    summary.value.add(tag='episode/score', simple_value=self.score)
-    summary.value.add(tag='episode/steps', simple_value=self.steps)
-    summary.value.add(tag='episode/time', simple_value=duration)
-    summary.value.add(
-        tag='episode/reward_per_sec', simple_value=self.score / duration)
-    summary.value.add(
-        tag='episode/steps_per_sec', simple_value=self.steps / duration)
-    summary_writer.add_summary(summary, global_step)
+    self.summaries.episode(step, self.score, self.steps, duration)
 
   @classmethod
   def create_env(cls, config):
