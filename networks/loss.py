@@ -35,12 +35,13 @@ class Losses(object):
     self.loss = tf.reduce_mean(self.importance_sampling * loss, name='loss')
 
     # Clip loss
+    self.loss = tf.reduce_mean(loss, name='loss')
     if config.loss_clipping > 0:
-      with tf.name_scope('clip_loss'):
-        self.loss = tf.maximum(
-            -config.loss_clipping,
-            tf.minimum(self.loss, config.loss_clipping),
-            name='loss')
+      self.loss = tf.clip_by_value(
+          self.loss,
+          -config.loss_clipping,
+          config.loss_clipping,
+          name='clipped_loss')
 
   def one_step_loss(self):
     with tf.name_scope('one_step_loss'):

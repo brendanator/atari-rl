@@ -1,4 +1,3 @@
-import cv2
 from datetime import datetime
 import numpy as np
 import os
@@ -40,19 +39,6 @@ def run_directory(config):
   return run_dir
 
 
-def process_frame(last_frame, current_frame, shape):
-  # Max last 2 frames to remove flicker
-  frame = np.stack([last_frame, current_frame], axis=3).max(axis=3)
-
-  # Rescale image
-  frame = cv2.resize(frame, shape)
-
-  # Convert to greyscale
-  frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-
-  return frame
-
-
 def format_offset(prefix, t):
   if t > 0:
     return prefix + '_t_plus_' + str(t)
@@ -87,6 +73,23 @@ def add_loss_summaries(total_loss):
     tf.summary.scalar('loss', loss_averages.average(l))
 
   return loss_averages_op
+
+
+def activation_summary(x):
+  """Helper to create summaries for activations.
+  Creates a summary that provides a histogram of activations.
+  Creates a summary that measures the sparsity of activations.
+  Args:
+    x: Tensor
+  Returns:
+    nothing
+  """
+  # Remove 'tower_[0-9]/' from the name in case this is a multi-GPU training
+  # session. This helps the clarity of presentation on tensorboard.
+  # tensor_name = re.sub('%s_[0-9]*/' % TOWER_NAME, '', x.op.name)
+  tensor_name = x.op.name
+  tf.summary.histogram(tensor_name + '/activations', x)
+  tf.summary.scalar(tensor_name + '/sparsity', tf.nn.zero_fraction(x))
 
 
 def scale_gradient(inputs, scale):

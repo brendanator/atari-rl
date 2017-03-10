@@ -85,7 +85,7 @@ flags.DEFINE_float('discount_rate', 0.99, 'Discount rate for future rewards')
 # Exploration
 flags.DEFINE_float('initial_exploration', 1.0,
                    'Initial value of epsilon is epsilon-greedy exploration')
-flags.DEFINE_float('final_exploration', 0.01,
+flags.DEFINE_float('final_exploration', 0.1,
                    'Final value of epsilon is epsilon-greedy exploration')
 flags.DEFINE_integer(
     'final_exploration_frame', 1000000,
@@ -95,7 +95,7 @@ flags.DEFINE_integer(
 flags.DEFINE_float('reward_clipping', 1.0,
                    'Range around zero to limit rewards to. 0 to disable. '
                    'Disabled if reward_scaling is True')
-flags.DEFINE_float('loss_clipping', 1.0,
+flags.DEFINE_float('loss_clipping', 10.0,
                    'Range around zero to limit loss to. 0 to disable')
 flags.DEFINE_float('grad_clipping', 10.0,
                    'Range around zero to limit gradients to. 0 to disable')

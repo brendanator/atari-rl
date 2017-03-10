@@ -27,6 +27,7 @@ class Network(object):
 
   def build_conv_layers(self, inputs):
     nhwc = tf.transpose(inputs.frames, [0, 2, 3, 1])
+    util.activation_summary(nhwc)
     conv1 = tf.layers.conv2d(
         nhwc,
         filters=32,
@@ -34,6 +35,7 @@ class Network(object):
         strides=[4, 4],
         activation=tf.nn.relu,
         name='conv1')
+    util.activation_summary(conv1)
     conv2 = tf.layers.conv2d(
         conv1,
         filters=64,
@@ -41,6 +43,7 @@ class Network(object):
         strides=[2, 2],
         activation=tf.nn.relu,
         name='conv2')
+    util.activation_summary(conv2)
     conv3 = tf.layers.conv2d(
         conv2,
         filters=64,
@@ -48,6 +51,7 @@ class Network(object):
         strides=[1, 1],
         activation=tf.nn.relu,
         name='conv3')
+    util.activation_summary(conv3)
     conv_output = tf.reshape(conv3, [-1, 64 * 7 * 7])
 
     # Rescale gradients entering the last convolution layer
@@ -68,6 +72,7 @@ class Network(object):
         [head.action_values for head in self.heads],
         axis=1,
         name='action_values')
+    util.activation_summary(self.action_values)
 
     self.taken_action_value = self.action_value(
         inputs.action, name='taken_action_value')

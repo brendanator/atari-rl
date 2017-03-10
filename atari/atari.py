@@ -1,3 +1,4 @@
+import cv2
 import numpy as np
 import time
 import util
@@ -48,8 +49,7 @@ class Atari(object):
       if self.render: self.env.render()
 
       self.steps += 1
-      self.frames.append(
-          util.process_frame(self.last_frame, frame, self.input_shape))
+      self.frames.append(self.process_frame(self.last_frame, frame))
       self.last_frame = frame
       self.score += reward_
 
@@ -62,12 +62,24 @@ class Atari(object):
     if self.render: self.env.render()
 
     self.steps += 1
-    self.frames.append(
-        util.process_frame(self.last_frame, frame, self.input_shape))
+    self.frames.append(self.process_frame(self.last_frame, frame))
     self.last_frame = frame
     self.score += reward
 
     return self.frames[-self.input_frames:], reward, done
+
+  def process_frame(self, last_frame, current_frame):
+    # Max last 2 frames to remove flicker
+    # TODO Use ALE color_averaging instead (current causes core dump)
+    frame = np.stack([last_frame, current_frame], axis=3).max(axis=3)
+
+    # Rescale image
+    frame = cv2.resize(frame, self.input_shape)
+
+    # Convert to greyscale
+    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+
+    return frame
 
   def log_episode(self, step):
     duration = time.time() - self.start_time

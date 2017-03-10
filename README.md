@@ -6,6 +6,7 @@ Learning to play Atari in TensorFlow using Deep Reinforcement Learning
 
 ## Setup
 ```
+git clone https://github.com/brendanator/atari-rl
 git submodule update --init
 conda create --name atari-rl python=3.5
 source activate atari-rl

@@ -112,11 +112,11 @@ class NetworkFactory(object):
     tf.summary.scalar('loss', loss)
 
     for var in variables:
-      tf.summary.histogram('trainable', var)
+      tf.summary.histogram(var.name, var)
 
     for grad, var in gradients:
       if grad is not None:
-        tf.summary.histogram('gradient', grad)
+        tf.summary.histogram('gradient/' + var.name, grad)
 
     self.summaries.create_summary_op()
 
