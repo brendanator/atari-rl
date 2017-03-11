@@ -5,16 +5,16 @@ class UniformPriorities(object):
   """Each transition has equal priority"""
 
   def __init__(self):
-    pass
+    self.num_values = 0
 
   def update_to_highest_priority(self, index):
-    pass
+    self.num_values = max(self.num_values, index)
 
   def update_priorities(self, indices, priorities):
     pass
 
-  def sample_index(self, count):
-    return np.random.randint(count)
+  def sample_indices(self, count):
+    return np.random.randint(self.num_values, size=count)
 
   def probabilities(self, indices):
     return np.ones_like(indices)
@@ -27,92 +27,76 @@ class ProportionalPriorities(object):
   Each tree is implemented with an np.array for efficiency"""
 
   def __init__(self, config):
-    self.capacity = config.replay_capacity
+    # Set capacity to be a power of 2 so we have balanced trees
+    self.depth = int(np.ceil(np.log2(config.replay_capacity)))
+    self.capacity = np.power(2, self.depth)
+
+    # First index in tree array is ignored to simplify calculations
+    self.root_node = 1
+    self.sum_tree = np.zeros(2 * self.capacity, dtype=np.float32)
+    self.max_tree = np.zeros(2 * self.capacity, dtype=np.float32)
+
     self.alpha = config.replay_alpha
 
-    self.sum_tree = np.zeros(2 * self.capacity - 1, dtype=np.float)
-    self.max_tree = np.zeros(2 * self.capacity - 1, dtype=np.float)
-
   def total_priority(self):
-    return self.sum_tree[0]
+    return self.sum_tree[self.root_node]
 
   def max_priority(self):
-    return self.max_tree[0] or 1  # Default priority if tree is empty
+    return self.max_tree[self.root_node] or 1  # Default value if tree is empty
 
   def update_to_highest_priority(self, leaf_index):
-    self.update_scaled_priority(leaf_index, self.max_priority())
+    self.update_scaled_priorites(leaf_index, self.max_priority())
 
   def update_priorities(self, indices, priorities):
-    priorities = np.absolute(priorities)
-    for index, priority in zip(indices, priorities):
-      self.update_priority(index, priority)
+    self.update_scaled_priorites(indices, np.absolute(priorities)**self.alpha)
 
-  def update_priority(self, leaf_index, priority):
-    scaled_priority = priority**self.alpha
-    self.update_scaled_priority(leaf_index, scaled_priority)
+  def update_scaled_priorites(self, indices, scaled_priorities):
+    indices += self.capacity
 
-  def update_scaled_priority(self, leaf_index, scaled_priority):
-    index = leaf_index + (self.capacity - 1)  # Skip the sum nodes
+    self.sum_tree[indices] = scaled_priorities
+    self.max_tree[indices] = scaled_priorities
 
-    self.sum_tree[index] = scaled_priority
-    self.max_tree[index] = scaled_priority
+    for _ in range(self.depth):
+      siblings = self.sibling(indices)
+      parents = self.parent(indices)
+      self.sum_tree[parents] = self.sum_tree[indices] + self.sum_tree[siblings]
+      self.max_tree[parents] = np.maximum(self.max_tree[indices],
+                                          self.max_tree[siblings])
+      indices = parents
 
-    self.update_parent_priorities(index)
+  def sample_indices(self, count):
+    values = np.random.random(count) * self.total_priority()
+    indices = np.ones(count, dtype=np.int32)
 
-  def update_parent_priorities(self, index):
-    parent = self.parent(index)
-    sibling = self.sibling(index)
+    for _ in range(self.depth):
+      left_children = self.left_child(indices)
+      left_values = self.sum_tree[left_children]
+      go_right = values > self.sum_tree[left_children]
+      indices = left_children + go_right
+      values -= left_values * go_right
 
-    self.sum_tree[parent] = self.sum_tree[index] + self.sum_tree[sibling]
-    self.max_tree[parent] = max(self.max_tree[index], self.max_tree[sibling])
-
-    if parent > 0:
-      self.update_parent_priorities(parent)
-
-  def sample_index(self, count):
-    sample_value = np.random.random() * self.total_priority()
-    return self.index_of_value(sample_value)
-
-  def index_of_value(self, value):
-    index = 0
-    while True:
-      if self.is_leaf(index):
-        return index - (self.capacity - 1)
-
-      left_index = self.left_child(index)
-      left_value = self.sum_tree[left_index]
-      if value <= left_value:
-        index = left_index
-      else:
-        index = self.right_child(index)
-        value -= left_value
+    return indices - self.capacity
 
   def probabilities(self, indices):
-    return self.sum_tree[indices + (self.capacity - 1)]
-
-  def is_leaf(self, index):
-    return index >= self.capacity - 1
+    return self.sum_tree[indices + self.capacity]
 
   def parent(self, index):
-    return (index - 1) // 2
+    return index >> 1
 
   def sibling(self, index):
-    if index % 2 == 0:
-      return index - 1
-    else:
-      return index + 1
+    return index ^ 1
 
   def left_child(self, index):
-    return (index * 2) + 1
+    return index * 2
 
   def right_child(self, index):
-    return (index * 2) + 2
+    return index * 2 + 1
 
   def __str__(self):
     sum_tree, max_tree = '', ''
-    index = 0
+    index = self.root_node
     while True:
-      end_index = index * 2 + 1
+      end_index = self.left_child(index)
       sum_tree += str(self.sum_tree[index:end_index]) + '\n'
       max_tree += str(self.max_tree[index:end_index]) + '\n'
 

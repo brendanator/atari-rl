@@ -109,59 +109,50 @@ class ReplayMemory(object):
     return SampleBatch(self, feeds, indices)
 
   def recent_indices(self, batch_size, input_range):
-    indices = []
-    indices_ranges = np.empty(
-        shape=(batch_size, len(input_range)), dtype=np.int32)
-    indices_ranges.fill(-1)
-
-    # Avoid infinite loop from repeated collisions
-    retries, max_retries = 0, len(input_range) * batch_size
-
-    index = self.offset_index(self.cursor, -max(input_range) - 1)
-    while len(indices) < batch_size and retries < max_retries:
-      if self.update_indices(index, indices, indices_ranges, input_range):
-        index = self.offset_index(index, -len(input_range))
-      else:
-        index = self.offset_index(index, -1)
-        retries += 1
-
-    return np.array(indices)
-
-  def sample_indices(self, batch_size, input_range):
-    indices = []
-    indices_ranges = np.empty(
-        shape=(batch_size, len(input_range)), dtype=np.int32)
-    indices_ranges.fill(-1)
-
     # Avoid infinite loop from repeated collisions
     retries, max_retries = 0, batch_size
 
+    start_index = self.cursor - max(input_range) - 1
+    offsets = -len(input_range) * np.arange(batch_size, dtype=np.int32)
+    new_indices = self.offset_index(start_index, offsets)
+    indices = self.valid_indices(new_indices, input_range)
+
     while len(indices) < batch_size and retries < max_retries:
-      index = self.priorities.sample_index(self.count)
-      if not self.update_indices(index, indices, indices_ranges, input_range):
-        retries += 1
+      new_indices = self.offset_index(new_indices[len(indices):],
+                                      -len(input_range) * batch_size)
+      indices = self.valid_indices(new_indices, input_range, indices)
+      retries += 1
+
+    return indices
+
+  def sample_indices(self, batch_size, input_range):
+    # Avoid infinite loop from repeated collisions
+    retries, max_retries = 0, batch_size
+
+    new_indices = self.priorities.sample_indices(batch_size)
+    indices = self.valid_indices(new_indices, input_range)
+
+    while len(indices) < batch_size and retries < max_retries:
+      new_indices = self.priorities.sample_indices(batch_size - len(indices))
+      self.valid_indices(new_indices, input_range, indices)
+      retries += 1
 
     return np.array(indices)
 
-  def update_indices(self, index, indices, indices_ranges, input_range):
-    num = len(indices)
-    index_range = self.offset_index(index, input_range)
+  def valid_indices(self, new_indices, input_range, indices=None):
+    # TODO Reject indices whose range overlaps existing indices ranges?
 
     # Reject indices too close to the cursor or to the start/end of episode
-    excludes_cursor = self.cursor not in index_range
-    within_episode = self.alives[index_range].all()
-    if not (excludes_cursor and within_episode):
-      return False
+    index_range = self.offset_index(new_indices.reshape([-1, 1]), input_range)
+    excludes_cursor = (index_range != self.cursor).all(axis=1)
+    within_episode = self.alives[index_range].all(axis=1)
+    valid_indices = new_indices[excludes_cursor & within_episode]
 
-    # Reject indices whose range overlaps existing indices ranges
-    transposed_index_range = index_range.reshape([1, 1, -1]).transpose()
-    if (transposed_index_range == indices_ranges[:num]).any():
-      return False
-
-    # Update indices
-    indices.append(index)
-    indices_ranges[num] = index_range
-    return True
+    # Return unique indices only
+    if indices is None:
+      return np.unique(valid_indices)
+    else:
+      return np.unique(np.append(valid_indices, indices))
 
 
 class SampleBatch(object):

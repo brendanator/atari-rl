@@ -92,3 +92,4 @@ ENV/
 checkpoints/
 runs/
 *.prof
+debug.sh
