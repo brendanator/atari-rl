@@ -34,7 +34,7 @@ def run_directory(config):
   if not os.path.isdir(run_dir):
     os.makedirs(run_dir)
 
-  log('Checkpoints and summaries will be written to %s' % run_dir)
+  log('Checkpoint and summary directory is %s' % run_dir)
 
   return run_dir
 

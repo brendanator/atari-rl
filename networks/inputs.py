@@ -5,94 +5,96 @@ import util
 
 class Inputs(object):
   def __init__(self, config):
-    self.config = config
     self.offset_inputs = {}
 
     with tf.name_scope('inputs') as self.scope:
       self.global_step = tf.contrib.framework.get_or_create_global_step()
 
-      self.replay_count = tf.placeholder(tf.int32, (), 'replay_count')
-      self.replay_count.required_feeds = RequiredFeeds(self.replay_count)
-      self.replay_count.feed_data = lambda memory, _: memory.count
+      self.replay_count = auto_placeholder(tf.int32, (), 'replay_count',
+                                           lambda memory, _: memory.count)
 
-      shape = [None, None] + list(config.input_shape)
-      self.frames = tf.placeholder(tf.uint8, shape, 'frames')
-      self.frames.zero_offset = tf.placeholder_with_default(
-          1 - config.input_frames, ())
-      self.frames.feed_data = lambda memory, indices: memory.frames[indices]
+      self.frames = auto_placeholder(
+          dtype=tf.uint8,
+          shape=[config.input_frames] + list(config.input_shape),
+          name='frames',
+          feed_data=lambda memory, indices: memory.frames[indices],
+          # Centre around 0, scale between [-1, 1]
+          preprocess_offset=lambda frames: (tf.to_float(frames) / 127.5) - 1)
 
-      self.actions = tf.placeholder(tf.int32, [None, None], name='actions')
-      self.actions.zero_offset = tf.placeholder(tf.int32, ())
-      self.actions.feed_data = lambda memory, indices: memory.actions[indices]
+      self.actions = auto_placeholder(
+          tf.int32, [1], 'actions',
+          lambda memory, indices: memory.actions[indices])
 
-      self.rewards = tf.placeholder(tf.float32, [None, None], name='rewards')
-      self.rewards.zero_offset = tf.placeholder(tf.int32, ())
-      self.rewards.feed_data = lambda memory, indices: memory.rewards[indices]
+      self.rewards = auto_placeholder(
+          tf.float32, [1], 'rewards',
+          lambda memory, indices: memory.rewards[indices])
 
-      self.alives = tf.placeholder(tf.float32, [None, None], name='alives')
-      self.alives.zero_offset = tf.placeholder(tf.int32, ())
-      self.alives.feed_data = lambda memory, indices: memory.alives[indices]
+      self.alives = auto_placeholder(
+          tf.float32, [1], 'alives',
+          lambda memory, indices: memory.alives[indices])
 
-      self.total_rewards = tf.placeholder(
-          tf.float32, [None, None], name='total_rewards')
-      self.total_rewards.zero_offset = tf.placeholder(tf.int32, ())
-      self.total_rewards.feed_data = (
+      self.total_rewards = auto_placeholder(
+          tf.float32, [1], 'total_rewards',
           lambda memory, indices: memory.total_rewards[indices])
 
-      self.bootstrap_mask = tf.placeholder(
-          tf.float32, [None, config.num_bootstrap_heads],
-          name='bootstrap_mask')
-      self.bootstrap_mask.required_feeds = RequiredFeeds(self.bootstrap_mask)
-      self.bootstrap_mask.feed_data = (
+      self.bootstrap_mask = auto_placeholder(
+          tf.float32, [1], 'bootstrap_mask',
           lambda memory, indices: memory.bootstrap_mask[indices])
 
-      self.priority_probs = tf.placeholder(tf.float32, [None, None],
-                                           'priority_probs')
-      self.priority_probs.required_feeds = RequiredFeeds(self.priority_probs)
-      self.priority_probs.feed_data = (
+      self.priority_probabilities = auto_placeholder(
+          tf.float32, [1], 'priority_probabilities',
           lambda memory, indices: memory.priorities.probabilities(indices))
 
   def offset_input(self, t):
     if t not in self.offset_inputs:
       with tf.name_scope(self.scope):
         with tf.name_scope(util.format_offset('input', t)):
-          offset_input = OffsetInput(self, t, self.config)
+          offset_input = OffsetInput(self, t)
           self.offset_inputs[t] = offset_input
     return self.offset_inputs[t]
 
 
+def auto_placeholder(dtype, shape, name, feed_data, preprocess_offset=None):
+  placeholder_shape = [None, None] + list(shape)[1:] if shape else shape
+  placeholder = tf.placeholder(dtype, placeholder_shape, name)
+  placeholder.required_feeds = RequiredFeeds(placeholder)
+  placeholder.feed_data = feed_data
+
+  tensor = preprocess_offset(placeholder) if preprocess_offset else placeholder
+
+  def offset_data(t, name):
+    input_len = shape[0]
+    if not hasattr(placeholder, 'zero_offset'):
+      placeholder.zero_offset = tf.placeholder_with_default(
+          input_len - 1,  # If no zero_offset is given assume that t = 0
+          (),
+          name + '/zero_offset')
+
+    end = t + 1
+    start = end - input_len
+    zero_offset = placeholder.zero_offset
+    offset_tensor = tensor[:, start + zero_offset:end + zero_offset]
+
+    input_range = np.arange(start, end)
+    offset_tensor.required_feeds = RequiredFeeds(placeholder, input_range)
+
+    return tf.reshape(offset_tensor, [-1] + shape, name)
+
+  placeholder.offset_data = offset_data
+  return placeholder
+
+
 class OffsetInput(object):
-  def __init__(self, inputs, t, config):
-    first_frame = 1 - config.input_frames
-    t_offset = inputs.frames.zero_offset + t
-    start_t_offset = t_offset + first_frame
-    frames = inputs.frames[:, start_t_offset:t_offset + 1]
-    required_range = np.arange(first_frame + t, t + 1)
-    frames.required_feeds = RequiredFeeds(inputs.frames, required_range)
-    shape = [-1, config.input_frames] + list(config.input_shape)
-    self.observations = tf.reshape(frames, shape, name='observations')
-    # Centre around 0, scale between [-1, 1]
-    self.frames = (tf.to_float(self.observations) / 127.5) - 1
+  def __init__(self, inputs, t):
+    # Only use for passing in full observation
+    if t == 0:
+      self.observations = inputs.frames
 
-    # Inputs are expanded to shape [None, 1] to allow broadcasting
-    #   and avoid operations creating shapes like [None, None, ...]
-    action = inputs.actions[:, inputs.actions.zero_offset + t]
-    action.required_feeds = RequiredFeeds(inputs.actions, t)
-    self.action = tf.expand_dims(action, axis=1, name='action')
-
-    reward = inputs.rewards[:, inputs.rewards.zero_offset + t]
-    reward.required_feeds = RequiredFeeds(inputs.rewards, t)
-    self.reward = tf.expand_dims(reward, axis=1, name='reward')
-
-    alive = inputs.alives[:, inputs.alives.zero_offset + t]
-    alive.required_feeds = RequiredFeeds(inputs.alives, t)
-    self.alive = tf.expand_dims(alive, axis=1, name='alive')
-
-    total_reward = inputs.total_rewards[:, inputs.total_rewards.zero_offset +
-                                        t]
-    total_reward.required_feeds = RequiredFeeds(inputs.total_rewards, t)
-    self.total_reward = tf.expand_dims(
-        total_reward, axis=1, name='total_reward')
+    self.frames = inputs.frames.offset_data(t, 'frames')
+    self.action = inputs.actions.offset_data(t, 'action')
+    self.reward = inputs.rewards.offset_data(t, 'reward')
+    self.alive = inputs.alives.offset_data(t, 'alive')
+    self.total_reward = inputs.total_rewards.offset_data(t, 'total_reward')
 
 
 class RequiredFeeds(object):

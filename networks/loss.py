@@ -33,7 +33,8 @@ class Losses(object):
 
     # Apply priority weights
     if config.replay_priorities != 'uniform':
-      importance_sampling = 1 / (self.replay_count * self.priority_probs)
+      importance_sampling = 1 / (self.replay_count *
+                                 self.priority_probabilities)
 
       beta_grad = (1.0 - config.replay_beta) / config.num_steps
       beta = config.replay_beta + beta_grad * self.global_step
@@ -190,10 +191,11 @@ class Losses(object):
     self.global_step = tf.to_float(inputs.global_step)
     self.replay_count = tf.to_float(inputs.replay_count)
     self.bootstrap_mask = inputs.bootstrap_mask
-    self.priority_probs = inputs.priority_probs
+    self.priority_probabilities = inputs.priority_probabilities
 
     self.policy_network = ArraySyntax(lambda t: factory.policy_network(t))
     self.target_network = ArraySyntax(lambda t: factory.target_network(t))
     self.action = ArraySyntax(lambda t: inputs.offset_input(t).action)
     self.reward = ArraySyntax(lambda t: inputs.offset_input(t).reward)
-    self.total_reward = ArraySyntax(lambda t: inputs.offset_input(t).total_reward)
+    self.total_reward = ArraySyntax(
+        lambda t: inputs.offset_input(t).total_reward)
