@@ -2,7 +2,7 @@ import os
 import tensorflow as tf
 from threading import Thread
 
-from networks import NetworkFactory
+from networks.factory import NetworkFactory
 import util
 
 
@@ -90,7 +90,7 @@ class Trainer(object):
 
     batch = replay_memory.sample_batch(fetches, self.config.batch_size)
     if batch:
-      step, priorities, summary = session.run(fetches, batch.feed_dict)
+      step, priorities, summary = session.run(fetches, batch.feed_dict())
       batch.update_priorities(priorities)
       self.summary.add_summary(summary, step)
 

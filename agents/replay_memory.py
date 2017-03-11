@@ -5,6 +5,7 @@ import threading
 import util
 
 from .replay_priorities import ProportionalPriorities, UniformPriorities
+from networks.inputs import RequiredFeeds
 
 
 class ReplayMemory(object):
@@ -98,7 +99,7 @@ class ReplayMemory(object):
     return (index + offset) % self.capacity
 
   def sample_batch(self, fetches, batch_size):
-    feeds = self.required_feeds(fetches)
+    feeds = RequiredFeeds.required_feeds(fetches)
 
     if self.recent_only:
       indices = self.recent_indices(batch_size, feeds.input_range())
@@ -106,29 +107,6 @@ class ReplayMemory(object):
       indices = self.sample_indices(batch_size, feeds.input_range())
 
     return SampleBatch(self, feeds, indices)
-
-  def required_feeds(self, tensor):
-    if hasattr(tensor, 'required_feeds'):
-      # Return cached result
-      return tensor.required_feeds
-    else:
-      # Get feeds required by all inputs
-      if isinstance(tensor, list):
-        input_tensors = tensor
-      else:
-        op = tensor if isinstance(tensor, tf.Operation) else tensor.op
-        input_tensors = list(op.inputs) + list(op.control_inputs)
-
-      from networks import inputs
-      feeds = inputs.RequiredFeeds()
-      for input_tensor in input_tensors:
-        feeds = feeds.merge(self.required_feeds(input_tensor))
-
-      # Cache results
-      if not isinstance(tensor, list):
-        tensor.required_feeds = feeds
-
-      return feeds
 
   def recent_indices(self, batch_size, input_range):
     indices = []
@@ -187,18 +165,14 @@ class ReplayMemory(object):
 
 
 class SampleBatch(object):
-  def __init__(self, replay_memory, feeds, indices):
-    self.priorities = replay_memory.priorities
+  def __init__(self, replay_memory, required_feeds, indices):
+    self.replay_memory = replay_memory
+    self.required_feeds = required_feeds
     self.indices = indices
     self.is_valid = len(indices) > 0
 
-    indices = indices.reshape(-1, 1)
-    self.feed_dict = {}
-    for feed, input_range in feeds.feeds.items():
-      offset_indices = replay_memory.offset_index(indices, input_range)
-      self.feed_dict[feed] = feed.feed_data(replay_memory, offset_indices)
-      if hasattr(feed, 'zero_offset'):
-        self.feed_dict[feed.zero_offset] = -min(input_range)
+  def feed_dict(self):
+    return self.required_feeds.feed_dict(self.indices, self.replay_memory)
 
   def update_priorities(self, priorites):
-    self.priorities.update_priorities(self.indices, priorites)
+    self.replay_memory.priorities.update_priorities(self.indices, priorites)

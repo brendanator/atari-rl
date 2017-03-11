@@ -150,7 +150,7 @@ def create_config():
   if config.async is None:
     config.num_threads = 1
   else:
-    config.replay_capacity = (config.train_period + 2)
+    config.replay_capacity = 1000
     config.replay_start_size = 0
 
     if config.async == 'one_step':

@@ -133,3 +133,38 @@ class RequiredFeeds(object):
     for value in self.feeds.values():
       offsets |= set(value)
     return np.arange(min(offsets), max(offsets))
+
+  def feed_dict(self, indices, replay_memory):
+    indices = indices.reshape(-1, 1)
+    feed_dict = {}
+    for feed, input_range in self.feeds.items():
+      offset_indices = replay_memory.offset_index(indices, input_range)
+      feed_dict[feed] = feed.feed_data(replay_memory, offset_indices)
+      if hasattr(feed, 'zero_offset'):
+        feed_dict[feed.zero_offset] = -min(input_range)
+
+    return feed_dict
+
+  @classmethod
+  def required_feeds(cls, tensor):
+    if hasattr(tensor, 'required_feeds'):
+      # Return cached result
+      return tensor.required_feeds
+    else:
+      # Get feeds required by all inputs
+      if isinstance(tensor, list):
+        input_tensors = tensor
+      else:
+        op = tensor if isinstance(tensor, tf.Operation) else tensor.op
+        input_tensors = list(op.inputs) + list(op.control_inputs)
+
+      from networks import inputs
+      feeds = inputs.RequiredFeeds()
+      for input_tensor in input_tensors:
+        feeds = feeds.merge(cls.required_feeds(input_tensor))
+
+      # Cache results
+      if not isinstance(tensor, list):
+        tensor.required_feeds = feeds
+
+      return feeds
