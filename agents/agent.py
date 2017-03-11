@@ -28,7 +28,7 @@ class Agent(object):
     else:
       [action] = session.run(
           self.policy_network.choose_action,
-          {self.policy_network.inputs.frames: [observation]})
+          {self.policy_network.inputs.observations: [observation]})
       return action
 
   def epsilon(self, step):

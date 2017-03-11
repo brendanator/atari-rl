@@ -81,23 +81,26 @@ class Trainer(object):
       agent.replay_memory.save()
 
   def reset_target_network(self, session, step):
-    if self.reset_op and step % self.config.target_network_update_period == 0:
-      session.run(self.reset_op)
+    if self.reset_op:
+      if step > 0 and step % self.config.target_network_update_period == 0:
+        session.run(self.reset_op)
 
   def train_batch(self, session, replay_memory, step):
-    batch = replay_memory.sample_batch(self.config.batch_size, step)
-    if not batch.is_valid:
-      return step
-
-    if step > 0 and step % self.config.summary_step_period == 0:
+    run_summary = step > 0 and step % self.config.summary_step_period == 0
+    if run_summary:
       fetches = [self.global_step, self.train_op, self.summaries.summary_op]
-      feed_dict = batch.build_feed_dict(fetches)
-      step, priorities, summary = session.run(fetches, feed_dict)
-      self.summaries.add_summary(summary, step)
     else:
       fetches = [self.global_step, self.train_op]
-      feed_dict = batch.build_feed_dict(fetches)
-      step, priorities = session.run(fetches, feed_dict)
+
+    batch = replay_memory.sample_batch(fetches, self.config.batch_size)
+    if not batch:
+      return step
+
+    if run_summary:
+      step, priorities, summary = session.run(fetches, batch.feed_dict)
+      self.summaries.add_summary(summary, step)
+    else:
+      step, priorities = session.run(fetches, batch.feed_dict)
 
     batch.update_priorities(priorities)
 

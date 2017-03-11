@@ -11,7 +11,7 @@ class NetworkFactory(object):
       self.reward_scaling = reward_scaling.RewardScaling(config)
     else:
       self.reward_scaling = reward_scaling.DisabledRewardScaling()
-    self.replay_inputs = {}
+    self.inputs = inputs.Inputs(config)
     self.policy_nets = {}
     self.target_nets = {}
     self.summaries = util.Summaries(config.run_dir)
@@ -25,16 +25,6 @@ class NetworkFactory(object):
     with tf.name_scope('networks') as self.network_scope:
       pass
 
-    with tf.name_scope('inputs') as self.input_scope:
-      self.global_inputs = inputs.GlobalInputs(config)
-
-  def inputs(self, t):
-    if t not in self.replay_inputs:
-      with tf.name_scope(self.input_scope):
-        self.replay_inputs[t] = inputs.ReplayInputs(t, self.config)
-
-    return self.replay_inputs[t]
-
   def policy_network(self, t=0):
     if t not in self.policy_nets:
       reuse = len(self.policy_nets) > 0
@@ -43,7 +33,7 @@ class NetworkFactory(object):
           with tf.name_scope(util.format_offset('policy', t)):
             self.policy_nets[t] = dqn.Network(
                 variable_scope=scope,
-                inputs=self.inputs(t),
+                inputs=self.inputs.offset_input(t),
                 reward_scaling=self.reward_scaling,
                 config=self.config)
 
@@ -57,7 +47,7 @@ class NetworkFactory(object):
           with tf.name_scope(util.format_offset('target', t)):
             self.target_nets[t] = dqn.Network(
                 variable_scope=scope,
-                inputs=self.inputs(t),
+                inputs=self.inputs.offset_input(t),
                 reward_scaling=self.reward_scaling,
                 config=self.config)
 
@@ -66,9 +56,7 @@ class NetworkFactory(object):
   def create_agents(self):
     agents = []
     for _ in range(self.config.num_threads):
-      pre_offset = min(self.replay_inputs.keys())
-      post_offset = max(self.replay_inputs.keys())
-      memory = ReplayMemory(pre_offset, post_offset, self.config)
+      memory = ReplayMemory(self.config)
       agent = Agent(self.policy_network(), memory, self.summaries, self.config)
       agents.append(agent)
 
@@ -76,8 +64,10 @@ class NetworkFactory(object):
 
   def create_train_ops(self):
     # Optimizer
-    optimizer = tf.train.RMSPropOptimizer(
-        learning_rate=0.0025, momentum=0.95, epsilon=0.0001)
+    # optimizer = tf.train.RMSPropOptimizer(
+    #     learning_rate=0.0025, momentum=0.95, epsilon=0.0001)
+    # optimizer = tf.train.AdamOptimizer(learning_rate=1e-4)
+    optimizer = tf.train.AdamOptimizer(epsilon=0.01)
 
     # Create loss
     losses = loss.Losses(self, self.config)
@@ -99,7 +89,7 @@ class NetworkFactory(object):
                  for grad, var in grads if grad is not None]
 
     # Create training op
-    global_step = tf.contrib.framework.get_or_create_global_step()
+    global_step = self.inputs.global_step
     minimize = optimizer.apply_gradients(grads, global_step, name='minimize')
     with tf.control_dependencies([minimize]):
       train_op = tf.identity(losses.priorities, name='train')

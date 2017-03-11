@@ -16,7 +16,7 @@ class UniformPriorities(object):
   def sample_index(self, count):
     return np.random.randint(count)
 
-  def importance_sampling(self, indices, count, step):
+  def probabilities(self, indices):
     return np.ones_like(indices)
 
 
@@ -29,8 +29,6 @@ class ProportionalPriorities(object):
   def __init__(self, config):
     self.capacity = config.replay_capacity
     self.alpha = config.replay_alpha
-    self.beta = config.replay_beta
-    self.beta_grad = (1.0 - self.beta) / config.num_steps
 
     self.sum_tree = np.zeros(2 * self.capacity - 1, dtype=np.float)
     self.max_tree = np.zeros(2 * self.capacity - 1, dtype=np.float)
@@ -89,14 +87,8 @@ class ProportionalPriorities(object):
         index = self.right_child(index)
         value -= left_value
 
-  def importance_sampling(self, indices, count, step):
-    probabilities = self.sum_tree[indices + (self.capacity - 1)]
-    beta = self.annealed_beta(step)
-    error_weights = (1.0 / (count * probabilities))**beta
-    return error_weights / error_weights.max()
-
-  def annealed_beta(self, step):
-    return self.beta + self.beta_grad * step
+  def probabilities(self, indices):
+    return self.sum_tree[indices + (self.capacity - 1)]
 
   def is_leaf(self, index):
     return index >= self.capacity - 1

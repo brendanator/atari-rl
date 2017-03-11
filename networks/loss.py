@@ -31,8 +31,15 @@ class Losses(object):
     # Sum bootstrap heads
     loss = tf.reduce_sum(loss, axis=1, name='square_error')
 
-    # Apply importance sampling
-    self.loss = tf.reduce_mean(self.importance_sampling * loss, name='loss')
+    # Apply priority weights
+    if config.replay_priorities != 'uniform':
+      importance_sampling = 1 / (self.replay_count * self.priority_probs)
+
+      beta_grad = (1.0 - config.replay_beta) / config.num_steps
+      beta = config.replay_beta + beta_grad * self.global_step
+      priority_weights = importance_sampling**beta
+
+      loss *= priority_weights / tf.reduce_max(priority_weights)
 
     # Clip loss
     self.loss = tf.reduce_mean(loss, name='loss')
@@ -177,14 +184,16 @@ class Losses(object):
       def __getitem__(self, key):
         return self.getitem(key)
 
+    inputs = factory.inputs
+
     self.discount = config.discount_rate
+    self.global_step = tf.to_float(inputs.global_step)
+    self.replay_count = tf.to_float(inputs.replay_count)
+    self.bootstrap_mask = inputs.bootstrap_mask
+    self.priority_probs = inputs.priority_probs
 
     self.policy_network = ArraySyntax(lambda t: factory.policy_network(t))
     self.target_network = ArraySyntax(lambda t: factory.target_network(t))
-
-    self.action = ArraySyntax(lambda t: factory.inputs(t).action)
-    self.reward = ArraySyntax(lambda t: factory.inputs(t).reward)
-    self.total_reward = ArraySyntax(lambda t: factory.inputs(t).total_reward)
-
-    self.bootstrap_mask = factory.global_inputs.bootstrap_mask
-    self.importance_sampling = factory.global_inputs.importance_sampling
+    self.action = ArraySyntax(lambda t: inputs.offset_input(t).action)
+    self.reward = ArraySyntax(lambda t: inputs.offset_input(t).reward)
+    self.total_reward = ArraySyntax(lambda t: inputs.offset_input(t).total_reward)

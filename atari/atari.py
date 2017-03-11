@@ -71,7 +71,7 @@ class Atari(object):
   def process_frame(self, last_frame, current_frame):
     # Max last 2 frames to remove flicker
     # TODO Use ALE color_averaging instead (current causes core dump)
-    frame = np.stack([last_frame, current_frame], axis=3).max(axis=3)
+    frame = np.maximum(last_frame, current_frame)
 
     # Rescale image
     frame = cv2.resize(frame, self.input_shape)

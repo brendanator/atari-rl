@@ -1,68 +1,135 @@
+import numpy as np
 import tensorflow as tf
 import util
 
 
-class ReplayInputs(object):
-  def __init__(self, t, config):
-    self.t = t
-
-    with tf.name_scope(util.format_offset('replay', t)):
-      shape = [None, config.input_frames] + list(config.input_shape)
-      frames = tf.placeholder(tf.uint8, shape, 'frames')
-      frames.feed_data = self.batch_frames
-      self.frames = tf.to_float(frames) / 255.0
-
-      # Inputs are expanded to shape [None, 1] to allow broadcasting
-      #   and avoid operations creating shapes like [None, None, ...]
-      action = tf.placeholder(tf.int32, [None], name='action')
-      action.feed_data = self.batch_actions
-      self.action = tf.expand_dims(action, axis=1, name='action')
-
-      reward = tf.placeholder(tf.float32, [None], name='reward')
-      reward.feed_data = self.batch_rewards
-      self.reward = tf.expand_dims(reward, axis=1, name='reward')
-
-      alive = tf.placeholder(tf.float32, [None], name='alive')
-      alive.feed_data = self.batch_alives
-      self.alive = tf.expand_dims(alive, axis=1, name='alive')
-
-      total_reward = tf.placeholder(tf.float32, [None], name='total_reward')
-      total_reward.feed_data = self.batch_total_rewards
-      self.total_reward = tf.expand_dims(
-          total_reward, axis=1, name='total_reward')
-
-  def batch_frames(self, batch):
-    return batch.frames(self.t)
-
-  def batch_actions(self, batch):
-    return batch.actions(self.t)
-
-  def batch_rewards(self, batch):
-    return batch.rewards(self.t)
-
-  def batch_alives(self, batch):
-    return batch.alives(self.t)
-
-  def batch_total_rewards(self, batch):
-    return batch.total_rewards(self.t)
-
-
-class GlobalInputs(object):
+class Inputs(object):
   def __init__(self, config):
-    with tf.name_scope('global'):
+    self.config = config
+    self.offset_inputs = {}
+
+    with tf.name_scope('inputs') as self.scope:
+      self.global_step = tf.contrib.framework.get_or_create_global_step()
+
+      self.replay_count = tf.placeholder(tf.int32, (), 'replay_count')
+      self.replay_count.required_feeds = RequiredFeeds(self.replay_count)
+      self.replay_count.feed_data = lambda memory, _: memory.count
+
+      shape = [None, None] + list(config.input_shape)
+      self.frames = tf.placeholder(tf.uint8, shape, 'frames')
+      self.frames.zero_offset = tf.placeholder_with_default(
+          1 - config.input_frames, ())
+      self.frames.feed_data = lambda memory, indices: memory.frames[indices]
+
+      self.actions = tf.placeholder(tf.int32, [None, None], name='actions')
+      self.actions.zero_offset = tf.placeholder(tf.int32, ())
+      self.actions.feed_data = lambda memory, indices: memory.actions[indices]
+
+      self.rewards = tf.placeholder(tf.float32, [None, None], name='rewards')
+      self.rewards.zero_offset = tf.placeholder(tf.int32, ())
+      self.rewards.feed_data = lambda memory, indices: memory.rewards[indices]
+
+      self.alives = tf.placeholder(tf.float32, [None, None], name='alives')
+      self.alives.zero_offset = tf.placeholder(tf.int32, ())
+      self.alives.feed_data = lambda memory, indices: memory.alives[indices]
+
+      self.total_rewards = tf.placeholder(
+          tf.float32, [None, None], name='total_rewards')
+      self.total_rewards.zero_offset = tf.placeholder(tf.int32, ())
+      self.total_rewards.feed_data = (
+          lambda memory, indices: memory.total_rewards[indices])
+
       self.bootstrap_mask = tf.placeholder(
           tf.float32, [None, config.num_bootstrap_heads],
           name='bootstrap_mask')
-      self.bootstrap_mask.feed_data = self.batch_bootstrap_mask
+      self.bootstrap_mask.required_feeds = RequiredFeeds(self.bootstrap_mask)
+      self.bootstrap_mask.feed_data = (
+          lambda memory, indices: memory.bootstrap_mask[indices])
 
-      importance_sampling = tf.placeholder(
-          tf.float32, [None], name='importance_sampling')
-      importance_sampling.feed_data = self.batch_importance_sampling
-      self.importance_sampling = tf.expand_dims(
-          importance_sampling, axis=1, name='importance_sampling')
+      self.priority_probs = tf.placeholder(tf.float32, [None, None],
+                                           'priority_probs')
+      self.priority_probs.required_feeds = RequiredFeeds(self.priority_probs)
+      self.priority_probs.feed_data = (
+          lambda memory, indices: memory.priorities.probabilities(indices))
 
-  def batch_bootstrap_mask(self, batch):
-    return batch.bootstrap_mask()
+  def offset_input(self, t):
+    if t not in self.offset_inputs:
+      with tf.name_scope(self.scope):
+        with tf.name_scope(util.format_offset('input', t)):
+          offset_input = OffsetInput(self, t, self.config)
+          self.offset_inputs[t] = offset_input
+    return self.offset_inputs[t]
 
-  def batch_importance_sampling(self, batch):
-    return batch.importance_sampling()
+
+class OffsetInput(object):
+  def __init__(self, inputs, t, config):
+    first_frame = 1 - config.input_frames
+    t_offset = inputs.frames.zero_offset + t
+    start_t_offset = t_offset + first_frame
+    frames = inputs.frames[:, start_t_offset:t_offset + 1]
+    required_range = np.arange(first_frame + t, t + 1)
+    frames.required_feeds = RequiredFeeds(inputs.frames, required_range)
+    shape = [-1, config.input_frames] + list(config.input_shape)
+    self.observations = tf.reshape(frames, shape, name='observations')
+    # Centre around 0, scale between [-1, 1]
+    self.frames = (tf.to_float(self.observations) / 127.5) - 1
+
+    # Inputs are expanded to shape [None, 1] to allow broadcasting
+    #   and avoid operations creating shapes like [None, None, ...]
+    action = inputs.actions[:, inputs.actions.zero_offset + t]
+    action.required_feeds = RequiredFeeds(inputs.actions, t)
+    self.action = tf.expand_dims(action, axis=1, name='action')
+
+    reward = inputs.rewards[:, inputs.rewards.zero_offset + t]
+    reward.required_feeds = RequiredFeeds(inputs.rewards, t)
+    self.reward = tf.expand_dims(reward, axis=1, name='reward')
+
+    alive = inputs.alives[:, inputs.alives.zero_offset + t]
+    alive.required_feeds = RequiredFeeds(inputs.alives, t)
+    self.alive = tf.expand_dims(alive, axis=1, name='alive')
+
+    total_reward = inputs.total_rewards[:, inputs.total_rewards.zero_offset +
+                                        t]
+    total_reward.required_feeds = RequiredFeeds(inputs.total_rewards, t)
+    self.total_reward = tf.expand_dims(
+        total_reward, axis=1, name='total_reward')
+
+
+class RequiredFeeds(object):
+  def __init__(self, placeholder=None, time_offsets=0, feeds=None):
+    if feeds:
+      self.feeds = feeds
+    else:
+      self.feeds = {}
+
+    if placeholder is None:
+      return
+
+    if isinstance(time_offsets, int):
+      time_offsets = np.arange(time_offsets, time_offsets + 1)
+    self.feeds[placeholder] = time_offsets
+
+  def merge(self, other):
+    if not self.feeds:
+      return other
+    elif not other.feeds:
+      return self
+
+    feeds = {}
+    keys = set(self.feeds.keys()) | set(other.feeds.keys())
+    for key in keys:
+      if key in self.feeds and key in other.feeds:
+        full_range = list(self.feeds[key]) + list(other.feeds[key])
+        feeds[key] = np.arange(min(full_range), max(full_range) + 1)
+      elif key in self.feeds:
+        feeds[key] = self.feeds[key]
+      else:
+        feeds[key] = other.feeds[key]
+
+    return RequiredFeeds(feeds=feeds)
+
+  def input_range(self):
+    offsets = set()
+    for value in self.feeds.values():
+      offsets |= set(value)
+    return np.arange(min(offsets), max(offsets))

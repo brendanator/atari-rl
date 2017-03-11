@@ -8,10 +8,7 @@ from .replay_priorities import ProportionalPriorities, UniformPriorities
 
 
 class ReplayMemory(object):
-  def __init__(self, pre_input_offset, post_input_offset, config):
-    # Input offsets that must be valid. Final offset can be safely ignored
-    self.input_range = np.arange(pre_input_offset, post_input_offset)
-
+  def __init__(self, config):
     # Config
     self.capacity = config.replay_capacity
     self.discount_rate = config.discount_rate
@@ -100,37 +97,62 @@ class ReplayMemory(object):
   def offset_index(self, index, offset):
     return (index + offset) % self.capacity
 
-  def sample_batch(self, batch_size, step):
+  def sample_batch(self, fetches, batch_size):
+    feeds = self.required_feeds(fetches)
+
     if self.recent_only:
-      indices = self.recent_indices(batch_size)
+      indices = self.recent_indices(batch_size, feeds.input_range())
     else:
-      indices = self.sample_indices(batch_size)
+      indices = self.sample_indices(batch_size, feeds.input_range())
 
-    return SampleBatch(self, indices, self.frame_offsets, step)
+    return SampleBatch(self, feeds, indices)
 
-  def recent_indices(self, batch_size):
+  def required_feeds(self, tensor):
+    if hasattr(tensor, 'required_feeds'):
+      # Return cached result
+      return tensor.required_feeds
+    else:
+      # Get feeds required by all inputs
+      if isinstance(tensor, list):
+        input_tensors = tensor
+      else:
+        op = tensor if isinstance(tensor, tf.Operation) else tensor.op
+        input_tensors = list(op.inputs) + list(op.control_inputs)
+
+      from networks import inputs
+      feeds = inputs.RequiredFeeds()
+      for input_tensor in input_tensors:
+        feeds = feeds.merge(self.required_feeds(input_tensor))
+
+      # Cache results
+      if not isinstance(tensor, list):
+        tensor.required_feeds = feeds
+
+      return feeds
+
+  def recent_indices(self, batch_size, input_range):
     indices = []
     indices_ranges = np.empty(
-        shape=(batch_size, len(self.input_range)), dtype=np.int32)
+        shape=(batch_size, len(input_range)), dtype=np.int32)
     indices_ranges.fill(-1)
 
     # Avoid infinite loop from repeated collisions
-    retries, max_retries = 0, len(self.input_range) * batch_size
+    retries, max_retries = 0, len(input_range) * batch_size
 
-    index = self.offset_index(self.cursor, -max(self.input_range) - 1)
+    index = self.offset_index(self.cursor, -max(input_range) - 1)
     while len(indices) < batch_size and retries < max_retries:
-      if self.update_indices(index, indices, indices_ranges):
-        index = self.offset_index(index, -len(self.input_range))
+      if self.update_indices(index, indices, indices_ranges, input_range):
+        index = self.offset_index(index, -len(input_range))
       else:
         index = self.offset_index(index, -1)
         retries += 1
 
     return np.array(indices)
 
-  def sample_indices(self, batch_size):
+  def sample_indices(self, batch_size, input_range):
     indices = []
     indices_ranges = np.empty(
-        shape=(batch_size, len(self.input_range)), dtype=np.int32)
+        shape=(batch_size, len(input_range)), dtype=np.int32)
     indices_ranges.fill(-1)
 
     # Avoid infinite loop from repeated collisions
@@ -138,19 +160,18 @@ class ReplayMemory(object):
 
     while len(indices) < batch_size and retries < max_retries:
       index = self.priorities.sample_index(self.count)
-      if not self.update_indices(index, indices, indices_ranges):
+      if not self.update_indices(index, indices, indices_ranges, input_range):
         retries += 1
 
     return np.array(indices)
 
-  def update_indices(self, index, indices, indices_ranges):
+  def update_indices(self, index, indices, indices_ranges, input_range):
     num = len(indices)
-    index_range = self.offset_index(index, self.input_range)
+    index_range = self.offset_index(index, input_range)
 
     # Reject indices too close to the cursor or to the start/end of episode
-    frames_index_range = index_range.reshape(-1, 1) + self.frame_offsets
-    excludes_cursor = self.cursor not in frames_index_range
-    within_episode = self.alives[frames_index_range].all()
+    excludes_cursor = self.cursor not in index_range
+    within_episode = self.alives[index_range].all()
     if not (excludes_cursor and within_episode):
       return False
 
@@ -166,72 +187,18 @@ class ReplayMemory(object):
 
 
 class SampleBatch(object):
-  def __init__(self, replay_memory, indices, frame_offsets, step):
-    self.replay_memory = replay_memory
+  def __init__(self, replay_memory, feeds, indices):
     self.priorities = replay_memory.priorities
     self.indices = indices
-    self.step = step
     self.is_valid = len(indices) > 0
-    self.frame_offsets = frame_offsets
 
-  def offset_indices(self, offset):
-    return self.replay_memory.offset_index(self.indices, offset)
-
-  def frames(self, offset):
-    offsets = self.offset_indices(offset)
-    offsets = offsets.reshape(-1, 1) + self.frame_offsets
-    return self.replay_memory.frames[offsets]
-
-  def actions(self, offset):
-    return self.replay_memory.actions[self.offset_indices(offset)]
-
-  def rewards(self, offset):
-    return self.replay_memory.rewards[self.offset_indices(offset)]
-
-  def alives(self, offset):
-    return self.replay_memory.alives[self.offset_indices(offset)]
-
-  def total_rewards(self, offset):
-    return self.replay_memory.total_rewards[self.offset_indices(offset)]
-
-  def importance_sampling(self):
-    return self.priorities.importance_sampling(
-        self.indices, self.replay_memory.count, self.step)
+    indices = indices.reshape(-1, 1)
+    self.feed_dict = {}
+    for feed, input_range in feeds.feeds.items():
+      offset_indices = replay_memory.offset_index(indices, input_range)
+      self.feed_dict[feed] = feed.feed_data(replay_memory, offset_indices)
+      if hasattr(feed, 'zero_offset'):
+        self.feed_dict[feed.zero_offset] = -min(input_range)
 
   def update_priorities(self, priorites):
     self.priorities.update_priorities(self.indices, priorites)
-
-  def build_feed_dict(self, fetches):
-    if not isinstance(fetches, list):
-      fetches = [fetches]
-
-    placeholders = set()
-    for fetch in fetches:
-      placeholders |= self.placeholders(fetch)
-
-    feed_dict = {}
-    for placeholder in placeholders:
-      feed_dict[placeholder] = placeholder.feed_data(self)
-
-    return feed_dict
-
-  def placeholders(self, tensor):
-    if hasattr(tensor, 'feed_data'):
-      # Placeholders are decorated with the 'feed_data' method
-      return {tensor}
-    elif hasattr(tensor, 'placeholders'):
-      # Return cached result
-      return tensor.placeholders
-    else:
-      # Get placeholders used by all inputs
-      placeholders = set()
-      op = tensor if isinstance(tensor, tf.Operation) else tensor.op
-      for input_tensor in op.inputs:
-        placeholders |= self.placeholders(input_tensor)
-      for control_tensor in op.control_inputs:
-        placeholders |= self.placeholders(control_tensor)
-
-      # Cache results
-      tensor.placeholders = placeholders
-
-      return placeholders
