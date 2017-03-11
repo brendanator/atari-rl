@@ -14,7 +14,7 @@ class NetworkFactory(object):
     self.inputs = inputs.Inputs(config)
     self.policy_nets = {}
     self.target_nets = {}
-    self.summaries = util.Summaries(config.run_dir)
+    self.summary = util.Summary(config)
 
     with tf.variable_scope('policy_variables') as self.policy_scope:
       pass
@@ -57,7 +57,7 @@ class NetworkFactory(object):
     agents = []
     for _ in range(self.config.num_threads):
       memory = ReplayMemory(self.config)
-      agent = Agent(self.policy_network(), memory, self.summaries, self.config)
+      agent = Agent(self.policy_network(), memory, self.summary, self.config)
       agents.append(agent)
 
     return agents
@@ -108,10 +108,10 @@ class NetworkFactory(object):
       if grad is not None:
         tf.summary.histogram('gradient/' + var.name, grad)
 
-    self.summaries.create_summary_op()
+    self.summary.create_summary_op()
 
-  def create_summaries(self):
-    return self.summaries
+  def create_summary(self):
+    return self.summary
 
   def create_reset_target_network_op(self):
     if self.policy_nets and self.target_nets:

@@ -16,7 +16,7 @@ class Trainer(object):
     self.global_step, self.train_op = factory.create_train_ops()
     self.reset_op = factory.create_reset_target_network_op()
     self.agents = factory.create_agents()
-    self.summaries = factory.create_summaries()
+    self.summary = factory.create_summary()
 
   def train(self):
     self.training = True
@@ -86,23 +86,13 @@ class Trainer(object):
         session.run(self.reset_op)
 
   def train_batch(self, session, replay_memory, step):
-    run_summary = step > 0 and step % self.config.summary_step_period == 0
-    if run_summary:
-      fetches = [self.global_step, self.train_op, self.summaries.summary_op]
-    else:
-      fetches = [self.global_step, self.train_op]
+    fetches = [self.global_step, self.train_op] + self.summary.operation(step)
 
     batch = replay_memory.sample_batch(fetches, self.config.batch_size)
-    if not batch:
-      return step
-
-    if run_summary:
+    if batch:
       step, priorities, summary = session.run(fetches, batch.feed_dict)
-      self.summaries.add_summary(summary, step)
-    else:
-      step, priorities = session.run(fetches, batch.feed_dict)
-
-    batch.update_priorities(priorities)
+      batch.update_priorities(priorities)
+      self.summary.add_summary(summary, step)
 
     return step
 

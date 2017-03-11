@@ -5,14 +5,14 @@ from agents.exploration_bonus import ExplorationBonus
 
 
 class Agent(object):
-  def __init__(self, policy_network, replay_memory, summaries, config):
+  def __init__(self, policy_network, replay_memory, summary, config):
     self.config = config
     self.policy_network = policy_network
     self.replay_memory = replay_memory
-    self.summaries = summaries
+    self.summary = summary
 
     # Create environment
-    self.atari = Atari(summaries, config)
+    self.atari = Atari(summary, config)
     self.exploration_bonus = ExplorationBonus(config)
 
   def new_game(self):
@@ -43,7 +43,7 @@ class Agent(object):
     annealed_exploration = initial - (step * annealing_rate)
     epsilon = max(annealed_exploration, final)
 
-    self.summaries.epsilon(step, epsilon)
+    self.summary.epsilon(step, epsilon)
 
     return epsilon
 

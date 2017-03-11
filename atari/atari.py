@@ -7,8 +7,8 @@ from gym.envs.atari.atari_env import AtariEnv
 
 
 class Atari(object):
-  def __init__(self, summaries, config):
-    self.summaries = summaries
+  def __init__(self, summary, config):
+    self.summary = summary
 
     util.log('Starting %s {frameskip: %s, repeat_action_probability: %s}' %
              (config.game, str(config.frameskip),
@@ -89,7 +89,7 @@ class Atari(object):
     util.log(message %
              (self.episode, self.score, self.steps, duration, steps_per_sec))
 
-    self.summaries.episode(step, self.score, self.steps, duration)
+    self.summary.episode(step, self.score, self.steps, duration)
 
   @classmethod
   def create_env(cls, config):

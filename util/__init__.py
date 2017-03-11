@@ -1,2 +1,2 @@
 from .util import *
-from .summaries import Summaries
+from .summary import Summary
