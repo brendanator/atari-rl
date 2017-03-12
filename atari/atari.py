@@ -77,7 +77,7 @@ class Atari(object):
     frame = cv2.resize(frame, self.input_shape)
 
     # Convert to greyscale
-    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
     return frame
 
@@ -93,7 +93,7 @@ class Atari(object):
 
   @classmethod
   def create_env(cls, config):
-    return AtariEnv(
+    return FastAtariEnv(
         game=config.game,
         obs_type='image',
         frameskip=config.frameskip,
@@ -102,3 +102,10 @@ class Atari(object):
   @classmethod
   def num_actions(cls, config):
     return Atari.create_env(config).action_space.n
+
+
+class FastAtariEnv(AtariEnv):
+  def _get_image(self):
+    # Don't reorder from rgb to bgr as we're converting to greyscale anyway
+    self.ale.getScreenRGB(self._buffer)  # says rgb but actually bgr
+    return self._buffer
