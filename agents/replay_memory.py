@@ -45,29 +45,6 @@ class ReplayMemory(object):
     else:
       raise Exception('Unknown replay_priorities: ' + config.replay_priorities)
 
-  def save(self):
-    name = self.run_dir + 'replay_' + threading.current_thread().name + '.hdf'
-    with h5py.File(name, 'w') as h5f:
-      for key, value in self.__dict__.items():
-        if key == 'priorities':
-          priorities_group = h5f.create_group(key)
-          for p_key, p_value in self.priorities.__dict__.items():
-            priorities_group.create_dataset(p_key, data=p_value)
-        else:
-          h5f.create_dataset(key, data=value)
-
-  def load(self):
-    name = self.run_dir + 'replay_' + threading.current_thread().name + '.hdf'
-    with h5py.File(name, 'r') as h5f:
-      for key in self.__dict__.keys():
-        if key == 'priorities':
-          priorities_group = h5f[key]
-          for p_key in self.priorities.__dict__.keys():
-            self.priorities.__dict__[p_key] = h5f[p_key][()]
-            priorities_group.create_dataset(p_key, data=p_value)
-        else:
-          self.__dict__[key] = h5f[key][()]
-
   def store_new_episode(self, observation):
     for frame in observation:
       self.cursor = self.offset_index(self.cursor, 1)
@@ -153,6 +130,28 @@ class ReplayMemory(object):
       return np.unique(valid_indices)
     else:
       return np.unique(np.append(valid_indices, indices))
+
+  def save(self):
+    name = self.run_dir + 'replay_' + threading.current_thread().name + '.hdf'
+    with h5py.File(name, 'w') as h5f:
+      for key, value in self.__dict__.items():
+        if key == 'priorities':
+          priorities_group = h5f.create_group(key)
+          for p_key, p_value in self.priorities.__dict__.items():
+            priorities_group.create_dataset(p_key, data=p_value)
+        else:
+          h5f.create_dataset(key, data=value)
+
+  def load(self):
+    name = self.run_dir + 'replay_' + threading.current_thread().name + '.hdf'
+    with h5py.File(name, 'r') as h5f:
+      for key in self.__dict__.keys():
+        if key == 'priorities':
+          priorities_group = h5f[key]
+          for p_key in self.priorities.__dict__.keys():
+            self.priorities.__dict__[p_key] = priorities_group[p_key][()]
+        else:
+          self.__dict__[key] = h5f[key][()]
 
 
 class SampleBatch(object):
