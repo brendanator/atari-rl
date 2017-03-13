@@ -35,7 +35,8 @@ class NetworkFactory(object):
                 variable_scope=scope,
                 inputs=self.inputs.offset_input(t),
                 reward_scaling=self.reward_scaling,
-                config=self.config)
+                config=self.config,
+                write_summaries=(t == 0))
 
     return self.policy_nets[t]
 
@@ -49,7 +50,8 @@ class NetworkFactory(object):
                 variable_scope=scope,
                 inputs=self.inputs.offset_input(t),
                 reward_scaling=self.reward_scaling,
-                config=self.config)
+                config=self.config,
+                write_summaries=False)
 
     return self.target_nets[t]
 

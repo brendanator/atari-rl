@@ -6,10 +6,12 @@ import util
 
 
 class Network(object):
-  def __init__(self, variable_scope, inputs, reward_scaling, config):
+  def __init__(self, variable_scope, inputs, reward_scaling, config,
+               write_summaries):
     self.scope = variable_scope
     self.inputs = inputs
     self.config = config
+    self.write_summaries = write_summaries
     self.num_heads = config.num_bootstrap_heads
     self.using_ensemble = config.bootstrap_use_ensemble
 
@@ -27,7 +29,7 @@ class Network(object):
 
   def build_conv_layers(self, inputs):
     nhwc = tf.transpose(inputs.frames, [0, 2, 3, 1])
-    util.activation_summary(nhwc)
+    self.activation_summary(nhwc)
     conv1 = tf.layers.conv2d(
         nhwc,
         filters=32,
@@ -35,7 +37,7 @@ class Network(object):
         strides=[4, 4],
         activation=tf.nn.relu,
         name='conv1')
-    util.activation_summary(conv1)
+    self.activation_summary(conv1)
     conv2 = tf.layers.conv2d(
         conv1,
         filters=64,
@@ -43,7 +45,7 @@ class Network(object):
         strides=[2, 2],
         activation=tf.nn.relu,
         name='conv2')
-    util.activation_summary(conv2)
+    self.activation_summary(conv2)
     conv3 = tf.layers.conv2d(
         conv2,
         filters=64,
@@ -51,7 +53,7 @@ class Network(object):
         strides=[1, 1],
         activation=tf.nn.relu,
         name='conv3')
-    util.activation_summary(conv3)
+    self.activation_summary(conv3)
     conv_output = tf.reshape(conv3, [-1, 64 * 7 * 7])
 
     # Rescale gradients entering the last convolution layer
@@ -72,7 +74,7 @@ class Network(object):
         [head.action_values for head in self.heads],
         axis=1,
         name='action_values')
-    util.activation_summary(self.action_values)
+    self.activation_summary(self.action_values)
 
     self.taken_action_value = self.action_value(
         inputs.action, name='taken_action_value')
@@ -138,6 +140,12 @@ class Network(object):
   @property
   def variables(self):
     return tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope.name)
+
+  def activation_summary(self, tensor):
+    if self.write_summaries:
+      tensor_name = tensor.op.name
+      tf.summary.histogram(tensor_name + '/activations', tensor)
+      tf.summary.scalar(tensor_name + '/sparsity', tf.nn.zero_fraction(tensor))
 
 
 class ActionValueHead(object):
