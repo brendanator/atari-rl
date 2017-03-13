@@ -26,7 +26,8 @@ class ReplayMemory(object):
         [config.replay_capacity] + list(config.input_shape), dtype=np.uint8)
     self.actions = np.zeros([config.replay_capacity], dtype=np.int32)
     self.rewards = np.zeros([config.replay_capacity], dtype=np.float32)
-    self.total_rewards = np.zeros([config.replay_capacity], dtype=np.float32)
+    self.discounted_rewards = np.zeros(
+        [config.replay_capacity], dtype=np.float32)
 
     # Store alive instead of done as it simplifies calculations elsewhere
     self.alives = np.zeros([config.replay_capacity], dtype=np.bool)
@@ -55,7 +56,7 @@ class ReplayMemory(object):
   def store_transition(self, action, reward, done, next_observation):
     self.actions[self.cursor] = action
     self.rewards[self.cursor] = reward
-    self.total_rewards[self.cursor] = reward
+    self.discounted_rewards[self.cursor] = reward
     self.priorities.update_to_highest_priority(self.cursor)
 
     self.cursor = self.offset_index(self.cursor, 1)
@@ -65,11 +66,11 @@ class ReplayMemory(object):
     self.frames[self.cursor] = next_observation[-1]
 
     if done:
-      # Update total_rewards for episode
+      # Update discounted_rewards for episode
       i = self.offset_index(self.cursor, -2)
       while self.alives[i] and i < self.count:
         reward = reward * self.discount_rate + self.rewards[i]
-        self.total_rewards[i] = reward
+        self.discounted_rewards[i] = reward
         i = self.offset_index(i, -1)
 
   def offset_index(self, index, offset):

@@ -33,9 +33,9 @@ class Inputs(object):
           tf.float32, [1], 'alives',
           lambda memory, indices: memory.alives[indices])
 
-      self.total_rewards = auto_placeholder(
-          tf.float32, [1], 'total_rewards',
-          lambda memory, indices: memory.total_rewards[indices])
+      self.discounted_rewards = auto_placeholder(
+          tf.float32, [1], 'discounted_rewards',
+          lambda memory, indices: memory.discounted_rewards[indices])
 
       self.bootstrap_mask = auto_placeholder(
           tf.float32, [1], 'bootstrap_mask',
@@ -94,7 +94,8 @@ class OffsetInput(object):
     self.action = inputs.actions.offset_data(t, 'action')
     self.reward = inputs.rewards.offset_data(t, 'reward')
     self.alive = inputs.alives.offset_data(t, 'alive')
-    self.total_reward = inputs.total_rewards.offset_data(t, 'total_reward')
+    self.discounted_reward = inputs.discounted_rewards.offset_data(
+        t, 'discounted_reward')
 
 
 class RequiredFeeds(object):

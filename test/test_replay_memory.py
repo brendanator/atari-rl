@@ -33,7 +33,7 @@ class ReplayMemoryTest(tf.test.TestCase):
         inputs.offset_input(1).reward,
         inputs.offset_input(1).alive,
         inputs.offset_input(2).alive,
-        inputs.offset_input(0).total_reward,
+        inputs.offset_input(0).discounted_reward,
     ]
     batch = memory.sample_batch(fetches, batch_size=2)
     feed_dict = batch.feed_dict()
@@ -47,11 +47,11 @@ class ReplayMemoryTest(tf.test.TestCase):
     self.assertAllEqual(feed_dict[inputs.alives],
                         [[True, True], [True, False]])
 
-    total_reward = sum([
+    discounted_reward = sum([
         reward * config.discount_rate**(reward - 4) for reward in range(4, 11)
     ])
     self.assertNear(
-        feed_dict[inputs.total_rewards][0], total_reward, err=0.0001)
+        feed_dict[inputs.discounted_rewards][0], discounted_reward, err=0.0001)
 
 
 if __name__ == "__main__":

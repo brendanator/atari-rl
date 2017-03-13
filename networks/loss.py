@@ -1,4 +1,5 @@
 import tensorflow as tf
+import util
 
 
 class Losses(object):
@@ -102,43 +103,54 @@ class Losses(object):
       return tf.maximum(advantage_target, next_advantage_target, name='target')
 
   def optimality_tightening(self):
-    # Upper bounds
-    upper_bounds = []
-    rewards = 0
-    for t in range(-1, -self.config.optimality_tightening_steps - 1, -1):
-      rewards = self.reward[t] + self.discount * rewards
-      q_value = self.discount**(t) * self.target_network[t].taken_action_value
-      upper_bounds.append(q_value - rewards)
-    upper_bound = tf.reduce_min(tf.stack(upper_bounds, axis=2), axis=2)
+    with tf.name_scope('optimality_tightening'):
+      taken_action_value = self.policy_network[0].taken_action_value
 
-    upper_bound_difference = (
-        self.policy_network[0].taken_action_value - upper_bound)
-    upper_bound_breached = tf.to_float(upper_bound_difference > 0)
-    upper_bound_penalty = tf.square(tf.nn.relu(upper_bound_difference))
+      # Upper bounds
+      upper_bounds = []
+      rewards = 0
+      for t in range(-1, -self.config.optimality_tightening_steps - 1, -1):
+        with tf.name_scope(util.format_offset('upper_bound', t)):
+          rewards = self.reward[t] + self.discount * rewards
+          q_value = (self.discounts[t] *
+                     self.target_network[t].taken_action_value)
+          upper_bound = q_value - rewards
+        upper_bounds.append(upper_bound)
 
-    # Lower bounds
-    total_reward = tf.tile(
-        self.total_reward[0], multiples=[1, self.config.num_bootstrap_heads])
-    lower_bounds = [total_reward]
-    rewards = self.reward[0]
-    for t in range(1, self.config.optimality_tightening_steps + 1):
-      rewards += self.reward[t] + self.discount**t
-      lower_bound = rewards + self.discount**(t + 1) * self.value(t + 1)
-      lower_bounds.append(lower_bound)
-    lower_bound = tf.reduce_max(tf.stack(lower_bounds, axis=2), axis=2)
+      upper_bound = tf.reduce_min(tf.stack(upper_bounds, axis=2), axis=2)
+      upper_bound_difference = taken_action_value - upper_bound
+      upper_bound_breached = tf.to_float(upper_bound_difference > 0)
+      upper_bound_penalty = tf.square(tf.nn.relu(upper_bound_difference))
 
-    lower_bound_difference = (
-        lower_bound - self.policy_network[t].taken_action_value)
-    lower_bound_breached = tf.to_float(lower_bound_difference > 0)
-    lower_bound_penalty = tf.square(tf.nn.relu(lower_bound_difference))
+      # Lower bounds
+      discounted_reward = tf.tile(
+          self.discounted_reward[0],
+          multiples=[1, self.config.num_bootstrap_heads])
+      lower_bounds = [discounted_reward]
+      rewards = self.reward[0]
+      for t in range(1, self.config.optimality_tightening_steps + 1):
+        with tf.name_scope(util.format_offset('lower_bound', t)):
+          rewards += self.reward[t] * self.discounts[t]
+          lower_bound = rewards + self.discounts[t + 1] * self.value(t + 1)
+        lower_bounds.append(lower_bound)
 
-    # Penalty and rescaling
-    penalty = lower_bound_penalty + upper_bound_penalty
-    constraints_breached = lower_bound_breached + upper_bound_breached
-    error_rescaling = 1.0 / (
-        1.0 + constraints_breached * self.config.optimality_penalty_ratio)
+      lower_bound = tf.reduce_max(tf.stack(lower_bounds, axis=2), axis=2)
+      lower_bound_difference = lower_bound - taken_action_value
+      lower_bound_breached = tf.to_float(lower_bound_difference > 0)
+      lower_bound_penalty = tf.square(tf.nn.relu(lower_bound_difference))
 
-    return penalty, error_rescaling
+      # Penalty and rescaling
+      penalty = self.config.optimality_penalty_ratio * (
+          lower_bound_penalty + upper_bound_penalty)
+      constraints_breached = lower_bound_breached + upper_bound_breached
+      error_rescaling = 1.0 / (
+          1.0 + constraints_breached * self.config.optimality_penalty_ratio)
+
+      tf.summary.scalar('discounted_reward', tf.reduce_mean(discounted_reward))
+      tf.summary.scalar('lower_bound', tf.reduce_mean(lower_bound))
+      tf.summary.scalar('upper_bound', tf.reduce_mean(upper_bound))
+
+      return penalty, error_rescaling
 
   def n_step_loss(self):
     n = self.config.train_period
@@ -188,6 +200,7 @@ class Losses(object):
     inputs = factory.inputs
 
     self.discount = config.discount_rate
+    self.discounts = ArraySyntax(lambda t: self.discount**t)
     self.global_step = tf.to_float(inputs.global_step)
     self.replay_count = tf.to_float(inputs.replay_count)
     self.bootstrap_mask = inputs.bootstrap_mask
@@ -197,5 +210,8 @@ class Losses(object):
     self.target_network = ArraySyntax(lambda t: factory.target_network(t))
     self.action = ArraySyntax(lambda t: inputs.offset_input(t).action)
     self.reward = ArraySyntax(lambda t: inputs.offset_input(t).reward)
-    self.total_reward = ArraySyntax(
-        lambda t: inputs.offset_input(t).total_reward)
+
+    # This is the total discounted reward from the
+    # current timestep until the end of the episode
+    self.discounted_reward = ArraySyntax(
+        lambda t: inputs.offset_input(t).discounted_reward)
