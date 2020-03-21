@@ -44,7 +44,7 @@ class Atari(object):
     if self.render: self.env.render()
     self.frames = []
 
-    for i in range(np.random.randint(self.input_frames, self.max_noops + 1)):
+    for _ in range(np.random.randint(self.input_frames, self.max_noops + 1)):
       frame, reward_, done, _ = self.env.step(0)
       if self.render: self.env.render()
 
