@@ -26,7 +26,8 @@ class Trainer(object):
         session = tf.train.MonitoredTrainingSession(
             checkpoint_dir=self.config.run_dir,
             save_summaries_steps=0,  # Summaries will be saved with train_op only
-            config=tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True)),
+            config=tf.ConfigProto(gpu_options=tf.GPUOptions(
+                allow_growth=True)),
         )
 
         with session:
@@ -83,15 +84,13 @@ class Trainer(object):
             agent.replay_memory.save()
 
     def reset_target_network(self, session, step):
-        if (
-            self.reset_op
-            and step > 0
-            and step % self.config.target_network_update_period == 0
-        ):
+        if (self.reset_op and step > 0
+                and step % self.config.target_network_update_period == 0):
             session.run(self.reset_op)
 
     def train_batch(self, session, replay_memory, step):
-        fetches = [self.global_step, self.train_op] + self.summary.operation(step)
+        fetches = [self.global_step, self.train_op
+                   ] + self.summary.operation(step)
 
         batch = replay_memory.sample_batch(fetches, self.config.batch_size)
         if batch:

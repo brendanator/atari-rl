@@ -12,7 +12,9 @@ GRADIENT_SCALING = "gradient_scaled_by_"
 def run_directory(config):
     def find_previous_run(dir):
         if os.path.isdir(dir):
-            runs = [child[4:] for child in os.listdir(dir) if child[:4] == "run_"]
+            runs = [
+                child[4:] for child in os.listdir(dir) if child[:4] == "run_"
+            ]
             if runs:
                 return max(int(run) for run in runs)
 
