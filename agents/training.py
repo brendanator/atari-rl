@@ -8,7 +8,7 @@ import util
 
 class Trainer(object):
     def __init__(self, config):
-        util.log('Creating network and training operations')
+        util.log("Creating network and training operations")
         self.config = config
 
         # Creating networks
@@ -21,11 +21,12 @@ class Trainer(object):
     def train(self):
         self.training = True
 
-        util.log('Creating session and loading checkpoint')
+        util.log("Creating session and loading checkpoint")
         session = tf.train.MonitoredTrainingSession(
             checkpoint_dir=self.config.run_dir,
             save_summaries_steps=0,  # Summaries will be saved with train_op only
-            config=tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True)))
+            config=tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True)),
+        )
 
         with session:
             if len(self.agents) == 1:
@@ -33,13 +34,13 @@ class Trainer(object):
             else:
                 self.train_threaded(session)
 
-        util.log('Training complete')
+        util.log("Training complete")
 
     def train_threaded(self, session):
         threads = []
         for i, agent in enumerate(self.agents):
             thread = Thread(target=self.train_agent, args=(session, agent))
-            thread.name = 'Agent-%d' % (i + 1)
+            thread.name = "Agent-%d" % (i + 1)
             thread.start()
             threads.append(thread)
 
@@ -49,16 +50,16 @@ class Trainer(object):
     def train_agent(self, session, agent):
         # Populate replay memory
         if self.config.load_replay_memory:
-            util.log('Loading replay memory')
+            util.log("Loading replay memory")
             agent.replay_memory.load()
         else:
-            util.log('Populating replay memory')
+            util.log("Populating replay memory")
             agent.populate_replay_memory()
 
         # Initialize step counters
         step, steps_until_train = 0, self.config.train_period
 
-        util.log('Starting training')
+        util.log("Starting training")
         while self.training and step < self.config.num_steps:
             # Start new episode
             observation, _, done = agent.new_game()
@@ -81,13 +82,15 @@ class Trainer(object):
             agent.replay_memory.save()
 
     def reset_target_network(self, session, step):
-        if (self.reset_op and step > 0
-                and step % self.config.target_network_update_period == 0):
+        if (
+            self.reset_op
+            and step > 0
+            and step % self.config.target_network_update_period == 0
+        ):
             session.run(self.reset_op)
 
     def train_batch(self, session, replay_memory, step):
-        fetches = [self.global_step, self.train_op] + \
-            self.summary.operation(step)
+        fetches = [self.global_step, self.train_op] + self.summary.operation(step)
 
         batch = replay_memory.sample_batch(fetches, self.config.batch_size)
         if batch:
@@ -98,5 +101,5 @@ class Trainer(object):
         return step
 
     def stop_training(self):
-        util.log('Stopping training')
+        util.log("Stopping training")
         self.training = False
