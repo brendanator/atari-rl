@@ -1,9 +1,10 @@
-import cv2
 import math
+
+import cv2
 import numpy as np
 
-from .cts.model import CTS
 import util
+from .cts.model import CTS
 
 
 class ExplorationBonus(object):
