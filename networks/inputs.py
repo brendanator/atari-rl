@@ -100,11 +100,7 @@ class OffsetInput(object):
 
 class RequiredFeeds(object):
   def __init__(self, placeholder=None, time_offsets=0, feeds=None):
-    if feeds:
-      self.feeds = feeds
-    else:
-      self.feeds = {}
-
+    self.feeds = feeds if feeds else {}
     if placeholder is None:
       return
 

@@ -23,9 +23,7 @@ class ExplorationBonus(object):
     if pseudo_count < 0:
       pseudo_count = 0  # Occasionally happens at start of training
 
-    # Return exploration bonus
-    exploration_bonus = self.beta / math.sqrt(pseudo_count + 0.01)
-    return exploration_bonus
+    return self.beta / math.sqrt(pseudo_count + 0.01)
 
   def update_density_model(self, frame):
     return self.sum_pixel_probabilities(frame, self.density_model.update)
