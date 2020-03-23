@@ -11,14 +11,12 @@ class Atari(object):
     def __init__(self, summary, config):
         self.summary = summary
 
-        util.log(
-            "Starting %s {frameskip: %s, repeat_action_probability: %s}"
-            % (
-                config.game,
-                str(config.frameskip),
-                str(config.repeat_action_probability),
-            )
-        )
+        util.log("Starting %s {frameskip: %s, repeat_action_probability: %s}" %
+                 (
+                     config.game,
+                     str(config.frameskip),
+                     str(config.repeat_action_probability),
+                 ))
 
         self.env = Atari.create_env(config)
 
@@ -51,7 +49,8 @@ class Atari(object):
             self.env.render()
         self.frames = []
 
-        for _ in range(np.random.randint(self.input_frames, self.max_noops + 1)):
+        for _ in range(np.random.randint(self.input_frames,
+                                         self.max_noops + 1)):
             frame, reward_, done, _ = self.env.step(0)
             if self.render:
                 self.env.render()
@@ -64,7 +63,7 @@ class Atari(object):
             if done:
                 self.reset()
 
-        return self.frames[-self.input_frames :], self.score, done
+        return self.frames[-self.input_frames:], self.score, done
 
     def step(self, action):
         frame, reward, done, _ = self.env.step(action)
@@ -76,7 +75,7 @@ class Atari(object):
         self.last_frame = frame
         self.score += reward
 
-        return self.frames[-self.input_frames :], reward, done
+        return self.frames[-self.input_frames:], reward, done
 
     def process_frame(self, last_frame, current_frame):
         # Max last 2 frames to remove flicker
@@ -97,8 +96,8 @@ class Atari(object):
 
         message = "Episode %d, score %.0f (%d steps, %.2f secs, %.2f steps/sec)"
         util.log(
-            message % (self.episode, self.score, self.steps, duration, steps_per_sec)
-        )
+            message %
+            (self.episode, self.score, self.steps, duration, steps_per_sec))
 
         self.summary.episode(step, self.score, self.steps, duration)
 
