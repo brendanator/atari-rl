@@ -1,8 +1,9 @@
-from datetime import datetime
-import numpy as np
 import os
-import tensorflow as tf
 import time
+from datetime import datetime
+
+import numpy as np
+import tensorflow as tf
 
 LUMINANCE_RATIOS = [0.2126, 0.7152, 0.0722]
 GRADIENT_SCALING = "gradient_scaled_by_"
