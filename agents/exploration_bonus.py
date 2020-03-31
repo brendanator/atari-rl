@@ -39,7 +39,8 @@ class ExplorationBonus(object):
             for x in range(frame.shape[1]):
                 context = self.context(frame, y, x)
                 pixel = frame[y, x]
-                total_log_probability += log_prob_func(context=context, symbol=pixel)
+                total_log_probability += log_prob_func(context=context,
+                                                       symbol=pixel)
 
         return math.exp(total_log_probability)
 
