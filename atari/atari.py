@@ -1,9 +1,10 @@
+import time
+
 import cv2
 import numpy as np
-import time
-import util
-
 from gym.envs.atari.atari_env import AtariEnv
+
+import util
 
 
 class Atari(object):
