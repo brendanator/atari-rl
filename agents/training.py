@@ -81,9 +81,9 @@ class Trainer(object):
       agent.replay_memory.save()
 
   def reset_target_network(self, session, step):
-    if self.reset_op:
-      if step > 0 and step % self.config.target_network_update_period == 0:
-        session.run(self.reset_op)
+    if (self.reset_op and step > 0
+        and step % self.config.target_network_update_period == 0):
+      session.run(self.reset_op)
 
   def train_batch(self, session, replay_memory, step):
     fetches = [self.global_step, self.train_op] + self.summary.operation(step)
