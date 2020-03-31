@@ -12,8 +12,7 @@ class Inputs(object):
             self.global_step = tf.contrib.framework.get_or_create_global_step()
 
             self.replay_count = auto_placeholder(
-                tf.int32, (), "replay_count", lambda memory, _: memory.count
-            )
+                tf.int32, (), "replay_count", lambda memory, _: memory.count)
 
             self.frames = auto_placeholder(
                 dtype=tf.uint8,
@@ -21,7 +20,8 @@ class Inputs(object):
                 name="frames",
                 feed_data=lambda memory, indices: memory.frames[indices],
                 # Centre around 0, scale between [-1, 1]
-                preprocess_offset=lambda frames: (tf.to_float(frames) / 127.5) - 1,
+                preprocess_offset=lambda frames: (tf.to_float(frames) / 127.5)
+                - 1,
             )
 
             self.actions = auto_placeholder(
@@ -63,7 +63,8 @@ class Inputs(object):
                 tf.float32,
                 [1],
                 "priority_probabilities",
-                lambda memory, indices: memory.priorities.probabilities(indices),
+                lambda memory, indices: memory.priorities.probabilities(indices
+                                                                        ),
             )
 
     def offset_input(self, t):
@@ -81,7 +82,8 @@ def auto_placeholder(dtype, shape, name, feed_data, preprocess_offset=None):
     placeholder.required_feeds = RequiredFeeds(placeholder)
     placeholder.feed_data = feed_data
 
-    tensor = preprocess_offset(placeholder) if preprocess_offset else placeholder
+    tensor = preprocess_offset(
+        placeholder) if preprocess_offset else placeholder
 
     def offset_data(t, name):
         input_len = shape[0]
@@ -95,7 +97,7 @@ def auto_placeholder(dtype, shape, name, feed_data, preprocess_offset=None):
         end = t + 1
         start = end - input_len
         zero_offset = placeholder.zero_offset
-        offset_tensor = tensor[:, start + zero_offset : end + zero_offset]
+        offset_tensor = tensor[:, start + zero_offset:end + zero_offset]
 
         input_range = np.arange(start, end)
         offset_tensor.required_feeds = RequiredFeeds(placeholder, input_range)
@@ -117,8 +119,7 @@ class OffsetInput(object):
         self.reward = inputs.rewards.offset_data(t, "reward")
         self.alive = inputs.alives.offset_data(t, "alive")
         self.discounted_reward = inputs.discounted_rewards.offset_data(
-            t, "discounted_reward"
-        )
+            t, "discounted_reward")
 
 
 class RequiredFeeds(object):
