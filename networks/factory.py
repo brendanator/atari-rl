@@ -1,7 +1,12 @@
 import tensorflow as tf
-from . import dqn, inputs, loss, reward_scaling
-from agents import Agent, ReplayMemory
+
 import util
+from . import dqn
+from . import inputs
+from . import loss
+from . import reward_scaling
+from agents import Agent
+from agents import ReplayMemory
 
 
 class NetworkFactory(object):

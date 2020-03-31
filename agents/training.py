@@ -1,9 +1,10 @@
 import os
-import tensorflow as tf
 from threading import Thread
 
-from networks.factory import NetworkFactory
+import tensorflow as tf
+
 import util
+from networks.factory import NetworkFactory
 
 
 class Trainer(object):
