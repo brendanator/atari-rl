@@ -116,17 +116,16 @@ class NetworkFactory(object):
     return self.summary
 
   def create_reset_target_network_op(self):
-    if self.policy_nets and self.target_nets:
-      policy_variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
-                                           self.policy_scope.name)
-      target_variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
-                                           self.target_scope.name)
-
-      with tf.name_scope('reset_target_network'):
-        copy_ops = []
-        for from_var, to_var in zip(policy_variables, target_variables):
-          name = 'reset_' + to_var.name.split('/', 1)[1][:-2].replace('/', '_')
-          copy_ops.append(tf.assign(to_var, from_var, name=name))
-        return tf.group(*copy_ops)
-    else:
+    if not (self.policy_nets and self.target_nets):
       return None
+    policy_variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
+                                         self.policy_scope.name)
+    target_variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
+                                         self.target_scope.name)
+
+    with tf.name_scope('reset_target_network'):
+      copy_ops = []
+      for from_var, to_var in zip(policy_variables, target_variables):
+        name = 'reset_' + to_var.name.split('/', 1)[1][:-2].replace('/', '_')
+        copy_ops.append(tf.assign(to_var, from_var, name=name))
+      return tf.group(*copy_ops)
