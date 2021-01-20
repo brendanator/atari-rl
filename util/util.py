@@ -13,7 +13,7 @@ def run_directory(config):
     if os.path.isdir(dir):
       runs = [child[4:] for child in os.listdir(dir) if child[:4] == 'run_']
       if runs:
-        return max([int(run) for run in runs])
+        return max(int(run) for run in runs)
 
     return 0
 
