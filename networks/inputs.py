@@ -100,11 +100,7 @@ class OffsetInput(object):
 
 class RequiredFeeds(object):
   def __init__(self, placeholder=None, time_offsets=0, feeds=None):
-    if feeds:
-      self.feeds = feeds
-    else:
-      self.feeds = {}
-
+    self.feeds = feeds or {}
     if placeholder is None:
       return
 
@@ -153,21 +149,20 @@ class RequiredFeeds(object):
     if hasattr(tensor, 'required_feeds'):
       # Return cached result
       return tensor.required_feeds
+    # Get feeds required by all inputs
+    if isinstance(tensor, list):
+      input_tensors = tensor
     else:
-      # Get feeds required by all inputs
-      if isinstance(tensor, list):
-        input_tensors = tensor
-      else:
-        op = tensor if isinstance(tensor, tf.Operation) else tensor.op
-        input_tensors = list(op.inputs) + list(op.control_inputs)
+      op = tensor if isinstance(tensor, tf.Operation) else tensor.op
+      input_tensors = list(op.inputs) + list(op.control_inputs)
 
-      from networks import inputs
-      feeds = inputs.RequiredFeeds()
-      for input_tensor in input_tensors:
-        feeds = feeds.merge(cls.required_feeds(input_tensor))
+    from networks import inputs
+    feeds = inputs.RequiredFeeds()
+    for input_tensor in input_tensors:
+      feeds = feeds.merge(cls.required_feeds(input_tensor))
 
-      # Cache results
-      if not isinstance(tensor, list):
-        tensor.required_feeds = feeds
+    # Cache results
+    if not isinstance(tensor, list):
+      tensor.required_feeds = feeds
 
-      return feeds
+    return feeds
