@@ -66,9 +66,7 @@ def auto_placeholder(dtype, shape, name, feed_data, preprocess_offset=None):
     input_len = shape[0]
     if not hasattr(placeholder, 'zero_offset'):
       placeholder.zero_offset = tf.placeholder_with_default(
-          input_len - 1,  # If no zero_offset is given assume that t = 0
-          (),
-          name + '/zero_offset')
+          input_len - 1, (), f'{name}/zero_offset')
 
     end = t + 1
     start = end - input_len
@@ -100,11 +98,7 @@ class OffsetInput(object):
 
 class RequiredFeeds(object):
   def __init__(self, placeholder=None, time_offsets=0, feeds=None):
-    if feeds:
-      self.feeds = feeds
-    else:
-      self.feeds = {}
-
+    self.feeds = feeds or {}
     if placeholder is None:
       return
 
@@ -153,21 +147,20 @@ class RequiredFeeds(object):
     if hasattr(tensor, 'required_feeds'):
       # Return cached result
       return tensor.required_feeds
+    # Get feeds required by all inputs
+    if isinstance(tensor, list):
+      input_tensors = tensor
     else:
-      # Get feeds required by all inputs
-      if isinstance(tensor, list):
-        input_tensors = tensor
-      else:
-        op = tensor if isinstance(tensor, tf.Operation) else tensor.op
-        input_tensors = list(op.inputs) + list(op.control_inputs)
+      op = tensor if isinstance(tensor, tf.Operation) else tensor.op
+      input_tensors = list(op.inputs) + list(op.control_inputs)
 
-      from networks import inputs
-      feeds = inputs.RequiredFeeds()
-      for input_tensor in input_tensors:
-        feeds = feeds.merge(cls.required_feeds(input_tensor))
+    from networks import inputs
+    feeds = inputs.RequiredFeeds()
+    for input_tensor in input_tensors:
+      feeds = feeds.merge(cls.required_feeds(input_tensor))
 
-      # Cache results
-      if not isinstance(tensor, list):
-        tensor.required_feeds = feeds
+    # Cache results
+    if not isinstance(tensor, list):
+      tensor.required_feeds = feeds
 
-      return feeds
+    return feeds

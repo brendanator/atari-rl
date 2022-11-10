@@ -20,12 +20,8 @@ class ExplorationBonus(object):
     prob = self.update_density_model(frame)
     recoding_prob = self.density_model_probability(frame)
     pseudo_count = prob * (1 - recoding_prob) / (recoding_prob - prob)
-    if pseudo_count < 0:
-      pseudo_count = 0  # Occasionally happens at start of training
-
-    # Return exploration bonus
-    exploration_bonus = self.beta / math.sqrt(pseudo_count + 0.01)
-    return exploration_bonus
+    pseudo_count = max(pseudo_count, 0)
+    return self.beta / math.sqrt(pseudo_count + 0.01)
 
   def update_density_model(self, frame):
     return self.sum_pixel_probabilities(frame, self.density_model.update)
