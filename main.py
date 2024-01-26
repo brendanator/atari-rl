@@ -155,12 +155,10 @@ def create_config():
 
     if config.async == 'one_step':
       config.batch_size = config.train_period
-    elif config.async == 'n_step':
-      config.batch_size = 1
-    elif config.async == 'a3c':
+    elif config. async in ['n_step', 'a3c']:
       config.batch_size = 1
     else:
-      raise Exception('Unknown asynchronous algorithm: ' + config.async)
+      raise Exception(f'Unknown asynchronous algorithm: {config.async}')
   config.n_step = config.async == 'n_step'
   config.actor_critic = config.async == 'a3c'
 

@@ -31,10 +31,7 @@ class RewardScaling(object):
     self.v = (1 - self.beta) * self.v + self.beta * average_square_reward
 
     sigma_squared = (self.v - self.mu**2) / self.variance
-    if sigma_squared > 0:
-      return sigma_squared
-    else:
-      return 1.0
+    return sigma_squared if sigma_squared > 0 else 1.0
 
   def unnormalize_output(self, output):
     return output * self.scale_weight + self.scale_bias

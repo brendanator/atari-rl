@@ -47,9 +47,8 @@ class ReplayMemoryTest(tf.test.TestCase):
     self.assertAllEqual(feed_dict[inputs.alives],
                         [[True, True], [True, False]])
 
-    discounted_reward = sum([
-        reward * config.discount_rate**(reward - 4) for reward in range(4, 11)
-    ])
+    discounted_reward = sum(reward * config.discount_rate**(reward - 4)
+                            for reward in range(4, 11))
     self.assertNear(
         feed_dict[inputs.discounted_rewards][0], discounted_reward, err=0.0001)
 

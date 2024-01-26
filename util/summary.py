@@ -27,10 +27,7 @@ class Summary(object):
     self.summary_writer.add_summary(summary, step)
 
   def operation(self, step):
-    if self.run_summary(step):
-      return [self.summary_op]
-    else:
-      return [self.dummy_summary_op]
+    return [self.summary_op] if self.run_summary(step) else [self.dummy_summary_op]
 
   def add_summary(self, summary, step):
     if summary:

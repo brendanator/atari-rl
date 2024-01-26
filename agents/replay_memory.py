@@ -44,7 +44,7 @@ class ReplayMemory(object):
     elif config.replay_priorities == 'proportional':
       self.priorities = ProportionalPriorities(config)
     else:
-      raise Exception('Unknown replay_priorities: ' + config.replay_priorities)
+      raise Exception(f'Unknown replay_priorities: {config.replay_priorities}')
 
   def store_new_episode(self, observation):
     for frame in observation:
@@ -133,7 +133,7 @@ class ReplayMemory(object):
       return np.unique(np.append(valid_indices, indices))
 
   def save(self):
-    name = self.run_dir + 'replay_' + threading.current_thread().name + '.hdf'
+    name = f'{self.run_dir}replay_{threading.current_thread().name}.hdf'
     with h5py.File(name, 'w') as h5f:
       for key, value in self.__dict__.items():
         if key == 'priorities':
@@ -144,7 +144,7 @@ class ReplayMemory(object):
           h5f.create_dataset(key, data=value)
 
   def load(self):
-    name = self.run_dir + 'replay_' + threading.current_thread().name + '.hdf'
+    name = f'{self.run_dir}replay_{threading.current_thread().name}.hdf'
     with h5py.File(name, 'r') as h5f:
       for key in self.__dict__.keys():
         if key == 'priorities':

@@ -13,18 +13,18 @@ def run_directory(config):
     if os.path.isdir(dir):
       runs = [child[4:] for child in os.listdir(dir) if child[:4] == 'run_']
       if runs:
-        return max([int(run) for run in runs])
+        return max(int(run) for run in runs)
 
     return 0
 
   if config.run_dir == 'latest':
-    parent_dir = 'runs/%s/' % config.game
+    parent_dir = f'runs/{config.game}/'
     previous_run = find_previous_run(parent_dir)
     run_dir = parent_dir + ('run_%d' % previous_run)
   elif config.run_dir:
     run_dir = config.run_dir
   else:
-    parent_dir = 'runs/%s/' % config.game
+    parent_dir = f'runs/{config.game}/'
     previous_run = find_previous_run(parent_dir)
     run_dir = parent_dir + ('run_%d' % (previous_run + 1))
 
@@ -34,18 +34,18 @@ def run_directory(config):
   if not os.path.isdir(run_dir):
     os.makedirs(run_dir)
 
-  log('Checkpoint and summary directory is %s' % run_dir)
+  log(f'Checkpoint and summary directory is {run_dir}')
 
   return run_dir
 
 
 def format_offset(prefix, t):
   if t > 0:
-    return prefix + '_t_plus_' + str(t)
+    return f'{prefix}_t_plus_{str(t)}'
   elif t == 0:
-    return prefix + '_t'
+    return f'{prefix}_t'
   else:
-    return prefix + '_t_minus_' + str(-t)
+    return f'{prefix}_t_minus_{str(-t)}'
 
 
 def add_loss_summaries(total_loss):
@@ -91,7 +91,7 @@ def log(message):
   import threading
   thread_id = threading.current_thread().name
   now = datetime.strftime(datetime.now(), '%F %X')
-  print('%s %s: %s' % (now, thread_id, message))
+  print(f'{now} {thread_id}: {message}')
 
 
 def memoize(f):

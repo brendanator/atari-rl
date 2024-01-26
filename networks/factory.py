@@ -108,7 +108,7 @@ class NetworkFactory(object):
 
     for grad, var in gradients:
       if grad is not None:
-        tf.summary.histogram('gradient/' + var.name, grad)
+        tf.summary.histogram(f'gradient/{var.name}', grad)
 
     self.summary.create_summary_op()
 
