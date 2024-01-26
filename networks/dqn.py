@@ -144,8 +144,8 @@ class Network(object):
   def activation_summary(self, tensor):
     if self.write_summaries:
       tensor_name = tensor.op.name
-      tf.summary.histogram(tensor_name + '/activations', tensor)
-      tf.summary.scalar(tensor_name + '/sparsity', tf.nn.zero_fraction(tensor))
+      tf.summary.histogram(f'{tensor_name}/activations', tensor)
+      tf.summary.scalar(f'{tensor_name}/sparsity', tf.nn.zero_fraction(tensor))
 
 
 class ActionValueHead(object):
